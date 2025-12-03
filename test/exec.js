@@ -1,0 +1,1 @@
+runtime.exec("./test/hello_world.js", "世界");
