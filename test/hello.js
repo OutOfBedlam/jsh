@@ -1,2 +1,3 @@
 const {sayHello} = require("demo.js");
-sayHello();
+
+sayHello(runtime.args[0]);

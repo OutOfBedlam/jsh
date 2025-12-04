@@ -1,1 +1,1 @@
-runtime.exec("./test/hello_world.js", "世界");
+runtime.exec("hello.js", "世界");

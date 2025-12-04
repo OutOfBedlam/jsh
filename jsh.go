@@ -3,66 +3,32 @@ package jsh
 import (
 	"fmt"
 	"io"
-	"log/slog"
-	"os/exec"
 	"slices"
-	"strings"
 	"time"
 
+	"github.com/OutOfBedlam/jsh/native/log"
 	"github.com/OutOfBedlam/jsh/native/shell"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
 )
 
 type JSRuntime struct {
-	Name        string
-	Source      string
-	Args        []string
-	Strict      bool
-	Env         Env
-	ExecBuilder ExecBuilderFunc
+	Name   string
+	Source string
+	Args   []string
+	Strict bool
+	Env    Env
 
-	program *goja.Program
-	vm      *goja.Runtime
-
+	vm            *goja.Runtime
 	shutdownHooks []func()
 	nowFunc       func() time.Time
 }
-
-// ExecBuilderFunc is a function that builds an *exec.Cmd given the source and arguments.
-// if code is empty, it indicates that the file is being executed from file named in args[0].
-// if code is non-empty, it indicates that the code is being executed.
-type ExecBuilderFunc func(code string, args []string) (*exec.Cmd, error)
 
 func (jr *JSRuntime) Run() error {
 	if jr.Env == nil {
 		jr.Env = &DefaultEnv{}
 	}
 
-	if program, err := goja.Compile(jr.Name, jr.Source, jr.Strict); err != nil {
-		return err
-	} else {
-		jr.program = program
-	}
-
-	if err := jr.initRuntime(); err != nil {
-		return err
-	}
-
-	if result, err := jr.vm.RunProgram(jr.program); err != nil {
-		return err
-	} else {
-		_ = result
-	}
-
-	slices.Reverse(jr.shutdownHooks)
-	for _, hook := range jr.shutdownHooks {
-		hook()
-	}
-	return nil
-}
-
-func (jr *JSRuntime) initRuntime() error {
 	jr.vm = goja.New()
 	jr.vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
 
@@ -73,23 +39,35 @@ func (jr *JSRuntime) initRuntime() error {
 	registry.RegisterNativeModule("@jsh/shell", shell.Module)
 	registry.Enable(jr.vm)
 
-	con := jr.vm.NewObject()
-	jr.vm.Set("console", con)
-	con.Set("log", console_log(jr.Env.Writer(), slog.LevelInfo))
-	con.Set("debug", console_log(jr.Env.Writer(), slog.LevelDebug))
-	con.Set("info", console_log(jr.Env.Writer(), slog.LevelInfo))
-	con.Set("warn", console_log(jr.Env.Writer(), slog.LevelWarn))
-	con.Set("error", console_log(jr.Env.Writer(), slog.LevelError))
+	jr.vm.Set("console", log.SetConsole(jr.vm, jr.Env.Writer()))
 
 	obj := jr.vm.NewObject()
 	jr.vm.Set("runtime", obj)
-	obj.Set("print", jr.Print)
-	obj.Set("println", jr.Println)
-	obj.Set("now", jr.Now)
-	obj.Set("addShutdownHook", jr.AddShutdownHook)
-	obj.Set("args", jr.args())
-	obj.Set("exec", jr.Exec)
-	obj.Set("execString", jr.ExecString)
+	obj.Set("now", jr.doNow) // TODO: move to external command (.js)
+	obj.Set("addShutdownHook", jr.doAddShutdownHook)
+	obj.Set("args", jr.doArgs())
+	obj.Set("exec", jr.doExec)
+	obj.Set("execString", jr.doExecString)
+
+	// guarantee shutdown hooks run at the end
+	defer func() {
+		slices.Reverse(jr.shutdownHooks)
+		for _, hook := range jr.shutdownHooks {
+			hook()
+		}
+	}()
+
+	program, err := goja.Compile(jr.Name, jr.Source, jr.Strict)
+	if err != nil {
+		return err
+	}
+
+	if result, err := jr.vm.RunProgram(program); err != nil {
+		return err
+	} else {
+		_ = result
+	}
+
 	return nil
 }
 
@@ -106,24 +84,11 @@ func (jr *JSRuntime) loadSource(moduleName string) ([]byte, error) {
 	return io.ReadAll(file)
 }
 
-func console_log(w io.Writer, level slog.Level) func(call goja.FunctionCall) goja.Value {
-	return func(call goja.FunctionCall) goja.Value {
-		args := make([]interface{}, len(call.Arguments)+1)
-		args[0] = level.String()
-		args[0] = args[0].(string) + strings.Repeat(" ", 5-len(args[0].(string)))
-		for i, arg := range call.Arguments {
-			args[i+1] = valueToPrintable(arg)
-		}
-		fmt.Fprintln(w, args...)
-		return goja.Undefined()
-	}
-}
-
-func (jr *JSRuntime) AddShutdownHook(hook func()) {
+func (jr *JSRuntime) doAddShutdownHook(hook func()) {
 	jr.shutdownHooks = append(jr.shutdownHooks, hook)
 }
 
-func (jr *JSRuntime) Now() goja.Value {
+func (jr *JSRuntime) doNow() goja.Value {
 	now := jr.nowFunc
 	if now == nil {
 		now = time.Now
@@ -131,21 +96,7 @@ func (jr *JSRuntime) Now() goja.Value {
 	return jr.vm.ToValue(now())
 }
 
-func (jr *JSRuntime) Print(call goja.FunctionCall) goja.Value {
-	args := make([]interface{}, len(call.Arguments))
-	for i, arg := range call.Arguments {
-		args[i] = valueToPrintable(arg)
-	}
-	fmt.Fprint(jr.Env.Writer(), args...)
-	return goja.Undefined()
-}
-
-func (jr *JSRuntime) Println(call goja.FunctionCall) goja.Value {
-	call.Arguments = append(call.Arguments, jr.vm.ToValue("\n"))
-	return jr.Print(call)
-}
-
-func (jr *JSRuntime) args() goja.Value {
+func (jr *JSRuntime) doArgs() goja.Value {
 	s := make([]any, len(jr.Args))
 	for i, arg := range jr.Args {
 		s[i] = arg
@@ -153,15 +104,16 @@ func (jr *JSRuntime) args() goja.Value {
 	return jr.vm.NewArray(s...)
 }
 
-func (jr *JSRuntime) ExecString(call goja.FunctionCall) goja.Value {
+func (jr *JSRuntime) doExecString(call goja.FunctionCall) goja.Value {
 	args := make([]string, len(call.Arguments))
 	for i, arg := range call.Arguments {
 		args[i] = arg.String()
 	}
-	if jr.ExecBuilder == nil {
-		panic(jr.vm.ToValue("runtime.exec: no command builder defined"))
+	eb := jr.Env.ExecBuilder()
+	if eb == nil {
+		panic(jr.vm.ToValue("runtime.execString: no command builder defined"))
 	}
-	ex, err := jr.ExecBuilder(args[0], args[1:])
+	ex, err := eb(args[0], args[1:])
 	if err != nil {
 		panic(jr.vm.ToValue(err.Error()))
 	}
@@ -169,20 +121,21 @@ func (jr *JSRuntime) ExecString(call goja.FunctionCall) goja.Value {
 	ex.Stdout = jr.Env.Writer()
 	ex.Stderr = jr.Env.Writer()
 	if err := ex.Run(); err != nil {
-		panic(jr.vm.ToValue("runtime.exec: " + err.Error()))
+		panic(jr.vm.ToValue("runtime.execString: " + err.Error()))
 	}
-	return jr.vm.ToValue(0)
+	return jr.vm.ToValue(ex.ProcessState.ExitCode())
 }
 
-func (jr *JSRuntime) Exec(call goja.FunctionCall) goja.Value {
+func (jr *JSRuntime) doExec(call goja.FunctionCall) goja.Value {
 	args := make([]string, len(call.Arguments))
 	for i, arg := range call.Arguments {
 		args[i] = arg.String()
 	}
-	if jr.ExecBuilder == nil {
+	eb := jr.Env.ExecBuilder()
+	if eb == nil {
 		panic(jr.vm.ToValue("runtime.exec: no command builder defined"))
 	}
-	ex, err := jr.ExecBuilder("", args)
+	ex, err := eb("", args)
 	if err != nil {
 		panic(jr.vm.ToValue(err.Error()))
 	}
@@ -192,5 +145,5 @@ func (jr *JSRuntime) Exec(call goja.FunctionCall) goja.Value {
 	if err := ex.Run(); err != nil {
 		panic(jr.vm.ToValue("runtime.exec: " + err.Error()))
 	}
-	return jr.vm.ToValue(0)
+	return jr.vm.ToValue(ex.ProcessState.ExitCode())
 }

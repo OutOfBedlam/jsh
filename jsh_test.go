@@ -13,8 +13,9 @@ import (
 )
 
 type TestEnv struct {
-	input  bytes.Buffer
-	output bytes.Buffer
+	input       bytes.Buffer
+	output      bytes.Buffer
+	execBuilder ExecBuilderFunc
 }
 
 var _ Env = (*TestEnv)(nil)
@@ -29,6 +30,10 @@ func (te *TestEnv) Writer() io.Writer {
 
 func (te *TestEnv) Filesystem() fs.FS {
 	return os.DirFS("./test/")
+}
+
+func (te *TestEnv) ExecBuilder() ExecBuilderFunc {
+	return execBuilder
 }
 
 type TestCase struct {
@@ -74,11 +79,21 @@ func runTest(t *testing.T, tc TestCase) {
 	})
 }
 
+var execBuilder ExecBuilderFunc
+
 func TestMain(m *testing.M) {
 	cmd := exec.Command("go", "build", "-o", "./tmp/jsh", "./cmd/jsh")
 	if err := cmd.Run(); err != nil {
 		fmt.Println("Failed to build jsh binary for tests:", err)
 		os.Exit(2)
+	}
+	execBuilder = func(source string, args []string) (*exec.Cmd, error) {
+		bin := "./tmp/jsh"
+		args = append([]string{
+			"-d", "./test/",
+			args[0],
+			"--"}, args[1:]...)
+		return exec.Command(bin, args...), nil
 	}
 	os.Exit(m.Run())
 }
@@ -105,7 +120,7 @@ func TestJsh(t *testing.T) {
 		},
 		{
 			name:     "runtime_now",
-			script:   `const x = runtime; x.println("NOW: ", x.now());`,
+			script:   `const x = console; x.println("NOW:", runtime.now());`,
 			preTest:  func(jr *JSRuntime) { jr.nowFunc = func() time.Time { return time.Unix(1764728536, 0) } },
 			postTest: func(jr *JSRuntime) { jr.nowFunc = time.Now },
 			output: []string{
@@ -116,29 +131,19 @@ func TestJsh(t *testing.T) {
 			name: "module_demo",
 			script: `
 				const { sayHello } = require("demo.js");
-				sayHello();
+				sayHello("");
 			`,
 			output: []string{
-				"Hello from demo.js!",
+				"Hello  from demo.js!",
 			},
 		},
 		{
 			name: "runtime_exec",
 			script: `
-				runtime.exec("hello_world.js", "世界");
+				runtime.exec("hello.js", "世界");
 			`,
 			output: []string{
-				"Hello, 世界",
-			},
-			preTest: func(j *JSRuntime) {
-				j.ExecBuilder = func(source string, args []string) (*exec.Cmd, error) {
-					bin := "./tmp/jsh"
-					args = append([]string{
-						"-d", "./test/",
-						args[0],
-						"--"}, args[1:]...)
-					return exec.Command(bin, args...), nil
-				}
+				"Hello 世界 from demo.js!",
 			},
 		},
 	}
