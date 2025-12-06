@@ -7,8 +7,8 @@ import (
 	"testing/fstest"
 )
 
-func TestMountFS_NewMountFS(t *testing.T) {
-	mfs := NewMountFS()
+func TestFS_NewFS(t *testing.T) {
+	mfs := NewFS()
 	if mfs == nil {
 		t.Fatal("NewMountFS returned nil")
 	}
@@ -20,7 +20,7 @@ func TestMountFS_NewMountFS(t *testing.T) {
 	}
 }
 
-func TestMountFS_Mount(t *testing.T) {
+func TestFS_Mount(t *testing.T) {
 	tests := []struct {
 		name       string
 		mountPoint string
@@ -37,7 +37,7 @@ func TestMountFS_Mount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mfs := NewMountFS()
+			mfs := NewFS()
 			testFS := fstest.MapFS{
 				"file.txt": &fstest.MapFile{Data: []byte("content")},
 			}
@@ -56,7 +56,7 @@ func TestMountFS_Mount(t *testing.T) {
 	}
 }
 
-func TestMountFS_Mount_Conflicts(t *testing.T) {
+func TestFS_Mount_Conflicts(t *testing.T) {
 	testFS1 := fstest.MapFS{
 		"file1.txt": &fstest.MapFile{Data: []byte("content1")},
 	}
@@ -70,16 +70,16 @@ func TestMountFS_Mount_Conflicts(t *testing.T) {
 		secondMount string
 		wantErr     bool
 	}{
-		{"exact duplicate", "foo", "foo", true},
-		{"parent-child", "foo", "foo/bar", true},
-		{"child-parent", "foo/bar", "foo", true},
-		{"siblings", "foo", "bar", false},
-		{"different nested", "foo/bar", "foo/baz", false},
+		{"exact duplicate", "/foo", "/foo", true},
+		{"parent-child", "/foo", "/foo/bar", true},
+		{"child-parent", "/foo/bar", "/foo", true},
+		{"siblings", "/foo", "/bar", false},
+		{"different nested", "/foo/bar", "/foo/baz", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mfs := NewMountFS()
+			mfs := NewFS()
 
 			if err := mfs.Mount(tt.firstMount, testFS1); err != nil {
 				t.Fatalf("First mount failed: %v", err)
@@ -93,14 +93,14 @@ func TestMountFS_Mount_Conflicts(t *testing.T) {
 	}
 }
 
-func TestMountFS_Unmount(t *testing.T) {
-	mfs := NewMountFS()
+func TestFS_Unmount(t *testing.T) {
+	mfs := NewFS()
 	testFS := fstest.MapFS{
 		"file.txt": &fstest.MapFile{Data: []byte("content")},
 	}
 
 	// Mount a filesystem
-	if err := mfs.Mount("test", testFS); err != nil {
+	if err := mfs.Mount("/test", testFS); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestMountFS_Unmount(t *testing.T) {
 	}
 
 	// Unmount it
-	if err := mfs.Unmount("test"); err != nil {
+	if err := mfs.Unmount("/test"); err != nil {
 		t.Errorf("Unmount failed: %v", err)
 	}
 
@@ -120,14 +120,14 @@ func TestMountFS_Unmount(t *testing.T) {
 	}
 
 	// Try to unmount non-existent mount
-	err := mfs.Unmount("nonexistent")
+	err := mfs.Unmount("/nonexistent")
 	if err != fs.ErrNotExist {
 		t.Errorf("Expected ErrNotExist, got %v", err)
 	}
 }
 
-func TestMountFS_Mounts(t *testing.T) {
-	mfs := NewMountFS()
+func TestFS_Mounts(t *testing.T) {
+	mfs := NewFS()
 	testFS := fstest.MapFS{
 		"file.txt": &fstest.MapFile{Data: []byte("content")},
 	}
@@ -139,7 +139,7 @@ func TestMountFS_Mounts(t *testing.T) {
 	}
 
 	// Add some mounts
-	mountPoints := []string{"foo", "bar", "baz/qux"}
+	mountPoints := []string{"/foo", "/bar", "/baz/qux"}
 	for _, mp := range mountPoints {
 		if err := mfs.Mount(mp, testFS); err != nil {
 			t.Fatalf("Mount %s failed: %v", mp, err)
@@ -153,7 +153,7 @@ func TestMountFS_Mounts(t *testing.T) {
 	}
 
 	// Check they are sorted
-	expected := []string{"bar", "baz/qux", "foo"}
+	expected := []string{"/bar", "/baz/qux", "/foo"}
 	for i, exp := range expected {
 		if mounts[i] != exp {
 			t.Errorf("Mount %d: expected %s, got %s", i, exp, mounts[i])
@@ -161,7 +161,10 @@ func TestMountFS_Mounts(t *testing.T) {
 	}
 }
 
-func TestMountFS_Open(t *testing.T) {
+func TestFS_Open(t *testing.T) {
+	fs0 := fstest.MapFS{
+		"rootfile.txt": &fstest.MapFile{Data: []byte("rootcontent")},
+	}
 	fs1 := fstest.MapFS{
 		"file1.txt":     &fstest.MapFile{Data: []byte("content1")},
 		"dir/file2.txt": &fstest.MapFile{Data: []byte("content2")},
@@ -170,11 +173,14 @@ func TestMountFS_Open(t *testing.T) {
 		"file3.txt": &fstest.MapFile{Data: []byte("content3")},
 	}
 
-	mfs := NewMountFS()
-	if err := mfs.Mount("mount1", fs1); err != nil {
+	mfs := NewFS()
+	if err := mfs.Mount("/", fs0); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
-	if err := mfs.Mount("mount2", fs2); err != nil {
+	if err := mfs.Mount("/mount1", fs1); err != nil {
+		t.Fatalf("Mount failed: %v", err)
+	}
+	if err := mfs.Mount("/mount2", fs2); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
 
@@ -184,11 +190,12 @@ func TestMountFS_Open(t *testing.T) {
 		wantContent string
 		wantErr     bool
 	}{
-		{"file in mount1", "mount1/file1.txt", "content1", false},
-		{"nested file in mount1", "mount1/dir/file2.txt", "content2", false},
-		{"file in mount2", "mount2/file3.txt", "content3", false},
-		{"non-existent mount", "mount3/file.txt", "", true},
-		{"non-existent file", "mount1/nonexistent.txt", "", true},
+		{"root file", "/rootfile.txt", "rootcontent", false},
+		{"file in mount1", "/mount1/file1.txt", "content1", false},
+		{"nested file in mount1", "/mount1/dir/file2.txt", "content2", false},
+		{"file in mount2", "/mount2/file3.txt", "content3", false},
+		{"non-existent mount", "/mount3/file.txt", "", true},
+		{"non-existent file", "/mount1/nonexistent.txt", "", true},
 		{"invalid path", "../outside.txt", "", true},
 	}
 
@@ -196,7 +203,7 @@ func TestMountFS_Open(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f, err := mfs.Open(tt.path)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Open() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Open(%q) error = %v, wantErr %v", tt.path, err, tt.wantErr)
 				return
 			}
 			if tt.wantErr {
@@ -216,7 +223,7 @@ func TestMountFS_Open(t *testing.T) {
 	}
 }
 
-func TestMountFS_Open_LongestMatch(t *testing.T) {
+func TestFS_Open_LongestMatch(t *testing.T) {
 	// Test that the longest matching mount point is used
 	fs1 := fstest.MapFS{
 		"file.txt": &fstest.MapFile{Data: []byte("short")},
@@ -225,11 +232,11 @@ func TestMountFS_Open_LongestMatch(t *testing.T) {
 		"file.txt": &fstest.MapFile{Data: []byte("long")},
 	}
 
-	mfs := NewMountFS()
-	if err := mfs.Mount("foo", fs1); err != nil {
+	mfs := NewFS()
+	if err := mfs.Mount("/foo", fs1); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
-	if err := mfs.Mount("foo/bar", fs2); err != nil {
+	if err := mfs.Mount("/foo/bar", fs2); err != nil {
 		// This should fail due to conflict prevention
 		if err != fs.ErrExist {
 			t.Fatalf("Expected ErrExist, got %v", err)
@@ -238,7 +245,7 @@ func TestMountFS_Open_LongestMatch(t *testing.T) {
 	}
 
 	// If we reach here, the mount succeeded (shouldn't happen with new logic)
-	f, err := mfs.Open("foo/bar/file.txt")
+	f, err := mfs.Open("/foo/bar/file.txt")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
@@ -255,15 +262,15 @@ func TestMountFS_Open_LongestMatch(t *testing.T) {
 	}
 }
 
-func TestMountFS_ReadDir(t *testing.T) {
+func TestFS_ReadDir(t *testing.T) {
 	testFS := fstest.MapFS{
 		"dir/file1.txt":        &fstest.MapFile{Data: []byte("content1")},
 		"dir/file2.txt":        &fstest.MapFile{Data: []byte("content2")},
 		"dir/subdir/file3.txt": &fstest.MapFile{Data: []byte("content3")},
 	}
 
-	mfs := NewMountFS()
-	if err := mfs.Mount("mount", testFS); err != nil {
+	mfs := NewFS()
+	if err := mfs.Mount("/mount", testFS); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
 
@@ -273,10 +280,10 @@ func TestMountFS_ReadDir(t *testing.T) {
 		wantCount int
 		wantErr   bool
 	}{
-		{"read dir", "mount/dir", 3, false},
-		{"read subdir", "mount/dir/subdir", 1, false},
-		{"non-existent dir", "mount/nonexistent", 0, true},
-		{"non-existent mount", "nomount/dir", 0, true},
+		{"read dir", "/mount/dir", 3, false},
+		{"read subdir", "/mount/dir/subdir", 1, false},
+		{"non-existent dir", "/mount/nonexistent", 0, true},
+		{"non-existent mount", "/nomount/dir", 0, true},
 	}
 
 	for _, tt := range tests {
@@ -297,7 +304,7 @@ func TestMountFS_ReadDir(t *testing.T) {
 	}
 }
 
-func TestMountFS_ReadDir_NoReadDirFS(t *testing.T) {
+func TestFS_ReadDir_NoReadDirFS(t *testing.T) {
 	// Create a filesystem that doesn't implement ReadDirFS
 	type basicFS struct {
 		fstest.MapFS
@@ -309,13 +316,13 @@ func TestMountFS_ReadDir_NoReadDirFS(t *testing.T) {
 		},
 	}
 
-	mfs := NewMountFS()
-	if err := mfs.Mount("mount", testFS); err != nil {
+	mfs := NewFS()
+	if err := mfs.Mount("/mount", testFS); err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}
 
 	// ReadDir should still work via fs.ReadDir fallback
-	entries, err := mfs.ReadDir("mount")
+	entries, err := mfs.ReadDir("/mount")
 	if err != nil {
 		t.Fatalf("ReadDir failed: %v", err)
 	}
@@ -325,37 +332,8 @@ func TestMountFS_ReadDir_NoReadDirFS(t *testing.T) {
 	}
 }
 
-func TestCleanPath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"foo", "foo"},
-		{"/foo", "foo"},
-		{"foo/", "foo"},
-		{"/foo/", "foo"},
-		{"foo/bar", "foo/bar"},
-		{"/foo/bar/", "foo/bar"},
-		{"foo//bar", "foo/bar"},
-		{"foo/./bar", "foo/bar"},
-		{"foo/../bar", "bar"},
-		{"/", "."},
-		{".", "."},
-		{"", "."},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := cleanPath(tt.input)
-			if result != tt.expected {
-				t.Errorf("cleanPath(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestMountFS_Interface(t *testing.T) {
-	mfs := NewMountFS()
+func TestFS_Interface(t *testing.T) {
+	mfs := NewFS()
 
 	// Verify it implements fs.FS
 	var _ fs.FS = mfs
@@ -364,19 +342,19 @@ func TestMountFS_Interface(t *testing.T) {
 	var _ fs.ReadDirFS = mfs
 }
 
-func BenchmarkMountFS_Open(b *testing.B) {
+func BenchmarkFS_Open(b *testing.B) {
 	testFS := fstest.MapFS{
 		"file.txt": &fstest.MapFile{Data: []byte("content")},
 	}
 
-	mfs := NewMountFS()
-	if err := mfs.Mount("mount", testFS); err != nil {
+	mfs := NewFS()
+	if err := mfs.Mount("/mount", testFS); err != nil {
 		b.Fatalf("Mount failed: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f, err := mfs.Open("mount/file.txt")
+		f, err := mfs.Open("/mount/file.txt")
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -384,21 +362,21 @@ func BenchmarkMountFS_Open(b *testing.B) {
 	}
 }
 
-func BenchmarkMountFS_ReadDir(b *testing.B) {
+func BenchmarkFS_ReadDir(b *testing.B) {
 	testFS := fstest.MapFS{
 		"dir/file1.txt": &fstest.MapFile{Data: []byte("content1")},
 		"dir/file2.txt": &fstest.MapFile{Data: []byte("content2")},
 		"dir/file3.txt": &fstest.MapFile{Data: []byte("content3")},
 	}
 
-	mfs := NewMountFS()
-	if err := mfs.Mount("mount", testFS); err != nil {
+	mfs := NewFS()
+	if err := mfs.Mount("/mount", testFS); err != nil {
 		b.Fatalf("Mount failed: %v", err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := mfs.ReadDir("mount/dir")
+		_, err := mfs.ReadDir("/mount/dir")
 		if err != nil {
 			b.Fatal(err)
 		}

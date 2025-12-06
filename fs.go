@@ -2,35 +2,33 @@ package jsh
 
 import (
 	"io/fs"
-	"path"
 	"sort"
 	"strings"
+
+	"github.com/OutOfBedlam/jsh/global"
 )
 
-// MountFS allows mounting multiple fs.FS at different paths
-type MountFS struct {
+// FS allows mounting multiple fs.FS at different paths
+type FS struct {
 	mounts map[string]fs.FS
 }
 
-var _ fs.FS = (*MountFS)(nil)
-var _ fs.ReadDirFS = (*MountFS)(nil)
+var _ fs.FS = (*FS)(nil)
+var _ fs.ReadDirFS = (*FS)(nil)
 
-// NewMountFS creates a new MountFS
-func NewMountFS() *MountFS {
-	return &MountFS{mounts: make(map[string]fs.FS)}
+// NewFS creates a new MountFS
+func NewFS() *FS {
+	return &FS{mounts: make(map[string]fs.FS)}
 }
 
 // Mount mounts an fs.FS at a given virtual path
 // Returns error if mountPoint is invalid or already exists
-func (m *MountFS) Mount(mountPoint string, filesystem fs.FS) error {
+func (m *FS) Mount(mountPoint string, filesystem fs.FS) error {
 	if filesystem == nil {
 		return fs.ErrInvalid
 	}
 
-	mountPoint = cleanPath(mountPoint)
-	if mountPoint == "" {
-		mountPoint = "."
-	}
+	mountPoint = global.CleanPath(mountPoint)
 
 	// Check for conflicting mounts
 	for existing := range m.mounts {
@@ -38,11 +36,11 @@ func (m *MountFS) Mount(mountPoint string, filesystem fs.FS) error {
 			return fs.ErrExist
 		}
 		// Check if new mount would shadow existing mount
-		if strings.HasPrefix(existing, mountPoint+"/") {
+		if mountPoint != "/" && strings.HasPrefix(existing, mountPoint+"/") {
 			return fs.ErrExist
 		}
 		// Check if existing mount would shadow new mount
-		if strings.HasPrefix(mountPoint, existing+"/") {
+		if existing != "/" && strings.HasPrefix(mountPoint, existing+"/") {
 			return fs.ErrExist
 		}
 	}
@@ -52,11 +50,8 @@ func (m *MountFS) Mount(mountPoint string, filesystem fs.FS) error {
 }
 
 // Unmount removes a mounted filesystem at the given path
-func (m *MountFS) Unmount(mountPoint string) error {
-	mountPoint = cleanPath(mountPoint)
-	if mountPoint == "" {
-		mountPoint = "."
-	}
+func (m *FS) Unmount(mountPoint string) error {
+	mountPoint = global.CleanPath(mountPoint)
 
 	if _, ok := m.mounts[mountPoint]; !ok {
 		return fs.ErrNotExist
@@ -67,7 +62,7 @@ func (m *MountFS) Unmount(mountPoint string) error {
 }
 
 // Mounts returns a list of all mount points
-func (m *MountFS) Mounts() []string {
+func (m *FS) Mounts() []string {
 	mounts := make([]string, 0, len(m.mounts))
 	for mountPoint := range m.mounts {
 		mounts = append(mounts, mountPoint)
@@ -77,9 +72,14 @@ func (m *MountFS) Mounts() []string {
 }
 
 // Open implements fs.FS
-func (m *MountFS) Open(name string) (fs.File, error) {
-	name = cleanPath(name)
-	if !fs.ValidPath(name) {
+func (m *FS) Open(name string) (fs.File, error) {
+	name = global.CleanPath(name)
+	// Validate path: skip leading / for fs.ValidPath check
+	validPath := strings.TrimPrefix(name, "/")
+	if validPath == "" {
+		validPath = "."
+	}
+	if !fs.ValidPath(validPath) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 	}
 
@@ -88,6 +88,14 @@ func (m *MountFS) Open(name string) (fs.File, error) {
 	var bestFS fs.FS
 
 	for mountPoint, filesystem := range m.mounts {
+		if mountPoint == "/" {
+			// Root mount matches everything
+			if bestMatch == "" {
+				bestMatch = "/"
+				bestFS = filesystem
+			}
+			continue
+		}
 		if name == mountPoint || strings.HasPrefix(name, mountPoint+"/") {
 			if len(mountPoint) > len(bestMatch) {
 				bestMatch = mountPoint
@@ -110,9 +118,14 @@ func (m *MountFS) Open(name string) (fs.File, error) {
 }
 
 // ReadDir implements fs.ReadDirFS
-func (m *MountFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	name = cleanPath(name)
-	if !fs.ValidPath(name) {
+func (m *FS) ReadDir(name string) ([]fs.DirEntry, error) {
+	name = global.CleanPath(name)
+	// Validate path: skip leading / for fs.ValidPath check
+	validPath := strings.TrimPrefix(name, "/")
+	if validPath == "" {
+		validPath = "."
+	}
+	if !fs.ValidPath(validPath) {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
 	}
 
@@ -121,6 +134,14 @@ func (m *MountFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	var bestFS fs.FS
 
 	for mountPoint, filesystem := range m.mounts {
+		if mountPoint == "/" {
+			// Root mount matches everything
+			if bestMatch == "" {
+				bestMatch = "/"
+				bestFS = filesystem
+			}
+			continue
+		}
 		if name == mountPoint || strings.HasPrefix(name, mountPoint+"/") {
 			if len(mountPoint) > len(bestMatch) {
 				bestMatch = mountPoint
@@ -146,14 +167,4 @@ func (m *MountFS) ReadDir(name string) ([]fs.DirEntry, error) {
 
 	// Fallback: use fs.ReadDir
 	return fs.ReadDir(bestFS, relPath)
-}
-
-// cleanPath normalizes a path by removing leading/trailing slashes and cleaning it
-func cleanPath(p string) string {
-	p = strings.Trim(p, "/")
-	p = path.Clean(p)
-	if p == "/" || p == "." {
-		return "."
-	}
-	return p
 }

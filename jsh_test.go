@@ -2,153 +2,117 @@ package jsh
 
 import (
 	"bytes"
-	"fmt"
-	"io"
-	"io/fs"
-	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
-type TestEnv struct {
-	input       bytes.Buffer
-	output      bytes.Buffer
-	execBuilder ExecBuilderFunc
-}
+func TestArgPassthrough(t *testing.T) {
+	tests := []struct {
+		input               []string
+		expectedArgs        []string
+		expectedPassthrough []string
+	}{
+		{[]string{"script.js", "--", "arg1", "arg2"}, []string{"script.js"}, []string{"arg1", "arg2"}},
+		{[]string{"script.js", "--"}, []string{"script.js"}, []string{}},
+		{[]string{"script.js"}, []string{"script.js"}, []string{}},
+		{[]string{"script.js", "arg1", "arg2"}, []string{"script.js", "arg1", "arg2"}, []string{}},
+		{[]string{"--", "arg1", "arg2"}, []string{}, []string{"arg1", "arg2"}},
+		{[]string{}, []string{}, []string{}},
+	}
 
-var _ Env = (*TestEnv)(nil)
-
-func (te *TestEnv) Reader() io.Reader {
-	return &te.input
-}
-
-func (te *TestEnv) Writer() io.Writer {
-	return &te.output
-}
-
-func (te *TestEnv) Filesystem() fs.FS {
-	return os.DirFS("./test/")
-}
-
-func (te *TestEnv) ExecBuilder() ExecBuilderFunc {
-	return execBuilder
-}
-
-type TestCase struct {
-	name     string
-	script   string
-	input    []string
-	output   []string
-	preTest  func(*JSRuntime)
-	postTest func(*JSRuntime)
-}
-
-func runTest(t *testing.T, tc TestCase) {
-	t.Helper()
-	t.Run(tc.name, func(t *testing.T) {
-		env := &TestEnv{}
-		env.input.WriteString(strings.Join(tc.input, "\n") + "\n")
-
-		jr := &JSRuntime{
-			Name:   tc.name,
-			Source: tc.script,
-			Env:    env,
+	for _, tt := range tests {
+		args, passthrough := argAndPassthrough(tt.input)
+		if !slices.Equal(args, tt.expectedArgs) {
+			t.Errorf("For input %v, expected args %v, got %v", tt.input, tt.expectedArgs, args)
 		}
-		if tc.preTest != nil {
-			tc.preTest(jr)
+		if !slices.Equal(passthrough, tt.expectedPassthrough) {
+			t.Errorf("For input %v, expected passthrough %v, got %v", tt.input, tt.expectedPassthrough, passthrough)
 		}
-		if err := jr.Run(); err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-		if tc.postTest != nil {
-			tc.postTest(jr)
-		}
+	}
+}
 
-		gotOutput := env.output.String()
-		lines := strings.Split(gotOutput, "\n")
-		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
-			t.Fatalf("Expected %d output lines, got %d", len(tc.output), len(lines)-1)
-		}
-		for i, expectedLine := range tc.output {
-			if lines[i] != expectedLine {
-				t.Errorf("Output line %d: expected %q, got %q", i, expectedLine, lines[i])
+func TestJshMain(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           []string
+		stdinInput     string
+		expectedOutput []string
+	}{
+		{
+			name:           "hello_with_no_args",
+			args:           []string{"hello"},
+			stdinInput:     "",
+			expectedOutput: []string{"Hello undefined from demo.js!"},
+		},
+		{
+			name:           "hello_with_args",
+			args:           []string{"hello", "--", "world"},
+			stdinInput:     "",
+			expectedOutput: []string{"Hello world from demo.js!"},
+		},
+		{
+			name:           "sbin_echo",
+			args:           []string{"echo", "--", "Hello, Echo?"},
+			stdinInput:     "",
+			expectedOutput: []string{"Hello, Echo?"},
+		},
+		{
+			name:           "exec",
+			args:           []string{"exec"},
+			stdinInput:     "",
+			expectedOutput: []string{"Hello 世界 from demo.js!"},
+		},
+		{
+			name:       "optparse",
+			args:       []string{"optparse", "--", "-v", "-h"},
+			stdinInput: "",
+			expectedOutput: []string{
+				"command version 0.1.0",
+				"Usage: command [options]",
+				"",
+				"Available options:",
+				"  -h, --help      Show this help message",
+				"  -v, --version   Show version information",
+				"Options: {help:true, version:true}",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Prepare command: go run main.go <args>
+			cmdArgs := append([]string{"-d", "./test/"}, tt.args...)
+			cmd := exec.Command("./tmp/jsh", cmdArgs...)
+
+			// Setup stdin with bytes.Buffer
+			var stdin bytes.Buffer
+			stdin.WriteString(tt.stdinInput)
+			cmd.Stdin = &stdin
+
+			// Setup stdout with bytes.Buffer
+			var stdout bytes.Buffer
+			cmd.Stdout = &stdout
+
+			// Setup stderr to capture any errors
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+
+			// Execute the command
+			err := cmd.Run()
+			if err != nil {
+				t.Fatalf("Failed to execute command: %v\nStderr: %s", err, stderr.String())
 			}
-		}
-	})
-}
 
-var execBuilder ExecBuilderFunc
+			// Get the output and trim whitespace
+			actualOutput := strings.TrimSpace(stdout.String())
+			expectedOutput := strings.TrimSpace(strings.Join(tt.expectedOutput, "\n"))
 
-func TestMain(m *testing.M) {
-	cmd := exec.Command("go", "build", "-o", "./tmp/jsh", "./cmd/jsh")
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Failed to build jsh binary for tests:", err)
-		os.Exit(2)
-	}
-	execBuilder = func(source string, args []string) (*exec.Cmd, error) {
-		bin := "./tmp/jsh"
-		args = append([]string{
-			"-d", "./test/",
-			args[0],
-			"--"}, args[1:]...)
-		return exec.Command(bin, args...), nil
-	}
-	os.Exit(m.Run())
-}
-
-func TestJsh(t *testing.T) {
-	ts := []TestCase{
-		{
-			name:   "console_log",
-			script: `console.log("Hello, World!");`,
-			output: []string{"INFO  Hello, World!"},
-		},
-		{
-			name: "runtime_addShutdownHook",
-			script: `
-				console.log("Setting shutdown hook");
-				runtime.addShutdownHook(function() {
-					console.debug("Shutdown hook called");
-				});
-			`,
-			output: []string{
-				"INFO  Setting shutdown hook",
-				"DEBUG Shutdown hook called",
-			},
-		},
-		{
-			name:     "runtime_now",
-			script:   `const x = console; x.println("NOW:", runtime.now());`,
-			preTest:  func(jr *JSRuntime) { jr.nowFunc = func() time.Time { return time.Unix(1764728536, 0) } },
-			postTest: func(jr *JSRuntime) { jr.nowFunc = time.Now },
-			output: []string{
-				"NOW: " + fmt.Sprintf("%v", time.Unix(1764728536, 0)),
-			},
-		},
-		{
-			name: "module_demo",
-			script: `
-				const { sayHello } = require("demo.js");
-				sayHello("");
-			`,
-			output: []string{
-				"Hello  from demo.js!",
-			},
-		},
-		{
-			name: "runtime_exec",
-			script: `
-				runtime.exec("hello.js", "世界");
-			`,
-			output: []string{
-				"Hello 世界 from demo.js!",
-			},
-		},
-	}
-
-	for _, tc := range ts {
-		runTest(t, tc)
+			// Compare output with expected
+			if actualOutput != expectedOutput {
+				t.Errorf("Output mismatch:\nExpected: %q\nActual:   %q", expectedOutput, actualOutput)
+			}
+		})
 	}
 }

@@ -5,8 +5,10 @@ go 1.25.4
 require (
 	github.com/dop251/goja v0.0.0-20251201205617-2bb4c724c0f9
 	github.com/dop251/goja_nodejs v0.0.0-20211022123610-8dd9abb0616d
+	github.com/gorilla/websocket v1.5.3
 	github.com/hymkor/go-multiline-ny v0.22.2
 	github.com/mattn/go-colorable v0.1.14
+	github.com/nyaosorg/go-readline-ny v1.12.1
 )
 
 require (
@@ -17,8 +19,8 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mattn/go-tty v0.0.7 // indirect
-	github.com/nyaosorg/go-readline-ny v1.12.1 // indirect
+	github.com/nyaosorg/go-box/v3 v3.0.0 // indirect
 	github.com/nyaosorg/go-ttyadapter v0.0.1 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )

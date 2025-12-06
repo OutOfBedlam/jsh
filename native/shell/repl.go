@@ -2,7 +2,9 @@ package shell
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -11,13 +13,15 @@ import (
 )
 
 type Repl struct {
-	rt *goja.Runtime
+	rt      *goja.Runtime
+	history *History
 }
 
 func repl(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 	return func(call goja.ConstructorCall) *goja.Object {
 		repl := &Repl{
-			rt: rt,
+			rt:      rt,
+			history: NewHistory("repl_history", 100),
 		}
 		obj := rt.NewObject()
 		obj.Set("loop", repl.Loop)
@@ -25,56 +29,72 @@ func repl(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 	}
 }
 
-func (sh *Repl) Loop(call goja.FunctionCall) goja.Value {
+const banner = "\033[1;36m╔══════════════════════════════════════╗\n" +
+	"║     Welcome to \033[1;35mJSH REPL\033[1;36m              ║\n" +
+	"╚══════════════════════════════════════╝\033[0m\n" +
+	"\033[33mCommands:\033[0m\n" +
+	"  \033[32m\\quit\033[0m, \033[32m\\q\033[0m  - Exit REPL\n" +
+	"  \033[32m\\r\033[0m         - Run script (at the last line of script)\n"
+
+func (repl *Repl) Loop(call goja.FunctionCall) goja.Value {
 	var ed multiline.Editor
-	ed.SetPrompt(sh.prompt)
-	ed.SubmitOnEnterWhen(sh.submitOnEnterWhen)
+	ed.SetPrompt(repl.prompt)
 	ed.SetWriter(colorable.NewColorableStdout())
+	ed.SubmitOnEnterWhen(repl.submitOnEnterWhen)
+	ed.SetHistory(repl.history)
+	ed.SetHistoryCycling(true)
 	ctx := context.Background()
+	repl.println(repl.rt.ToValue(banner))
 	for {
-		var content string
+		var input string
 		if lines, err := ed.Read(ctx); err != nil {
 			break
 		} else {
-			if len(lines) == 1 {
-				line := strings.TrimSpace(strings.TrimSuffix(lines[0], ";"))
-				if line == "exit" || line == "quit" {
-					return sh.rt.ToValue(0)
-				}
+			last := lines[len(lines)-1]
+			switch last {
+			case "\\r": // run script
+				// remove the last line and
+				input = strings.Join(lines, "\n")
+				repl.history.Add(input)
+				input = strings.TrimSuffix(input, "\\r")
+			case "\\exit", "\\q", "\\quit":
+				return repl.rt.ToValue(0)
 			}
-			content = strings.Join(lines, "\n")
 		}
-		val, err := sh.rt.RunString(content)
+		val, err := repl.rt.RunString(input)
 		if err != nil {
-			sh.println(sh.rt.NewGoError(err))
+			repl.println(repl.rt.NewGoError(err))
 		} else {
 			if val != nil && val != goja.Null() && val != goja.Undefined() {
-				sh.println(val)
+				repl.println(val)
 			} else {
-				sh.println()
+				repl.println()
 			}
 		}
 	}
-	return sh.rt.ToValue(0)
+	return repl.rt.ToValue(0)
 }
 
-func (sh *Repl) prompt(w io.Writer, lineNo int) (int, error) {
+func (repl *Repl) prompt(w io.Writer, lineNo int) (int, error) {
 	if lineNo == 0 {
 		return w.Write([]byte("repl> "))
 	} else {
-		return w.Write([]byte("....  "))
+		return w.Write([]byte(fmt.Sprintf("%04d  ", lineNo)))
 	}
 }
 
-func (sh *Repl) submitOnEnterWhen(lines []string, lineNo int) bool {
-	if strings.HasSuffix(lines[len(lines)-1], `;`) {
+// regular expression to match repl command that starts with \{command}
+var replCommandRegex = regexp.MustCompile(`^\\([a-zA-Z]+)(\s+.*)?$`)
+
+func (repl *Repl) submitOnEnterWhen(lines []string, lineNo int) bool {
+	if replCommandRegex.MatchString(lines[lineNo]) {
 		return true
 	}
 	return false
 }
 
-func (sh *Repl) println(vals ...goja.Value) {
-	console := sh.rt.Get("runtime").(*goja.Object)
+func (repl *Repl) println(vals ...goja.Value) {
+	console := repl.rt.Get("console").(*goja.Object)
 	print, _ := goja.AssertFunction(console.Get("println"))
 	print(goja.Undefined(), vals...)
 }

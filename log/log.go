@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -22,6 +24,7 @@ func SetConsole(vm *goja.Runtime, w io.Writer) *goja.Object {
 	con.Set("error", makeConsoleLog(slog.LevelError))
 	con.Set("println", doPrintln)
 	con.Set("print", doPrint)
+	con.Set("printf", doPrintf)
 	return con
 }
 
@@ -31,6 +34,10 @@ func Println(args ...interface{}) {
 
 func Print(args ...interface{}) {
 	fmt.Fprint(defaultWriter, args...)
+}
+
+func Printf(format string, args ...interface{}) {
+	fmt.Fprintf(defaultWriter, format, args...)
 }
 
 func Log(level slog.Level, args ...interface{}) {
@@ -46,6 +53,19 @@ func doPrint(call goja.FunctionCall) goja.Value {
 
 func doPrintln(call goja.FunctionCall) goja.Value {
 	Println(argsValues(call)...)
+	return goja.Undefined()
+}
+
+func doPrintf(call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) == 0 {
+		return goja.Undefined()
+	}
+	format := call.Arguments[0].String()
+	args := make([]interface{}, len(call.Arguments)-1)
+	for i := 1; i < len(call.Arguments); i++ {
+		args[i-1] = valueToPrintable(call.Arguments[i])
+	}
+	Printf(format, args...)
 	return goja.Undefined()
 }
 
@@ -66,37 +86,63 @@ func argsValues(call goja.FunctionCall) []interface{} {
 
 func valueToPrintable(value goja.Value) any {
 	val := value.Export()
-	if obj, ok := val.(*goja.Object); ok {
-		toString, ok := goja.AssertFunction(obj.Get("toString"))
-		if ok {
-			ret, _ := toString(obj)
-			return ret
-		}
+	return anyToPrintable(val)
+}
+
+func anyToPrintable(val any) any {
+	if val == nil {
+		return "null"
 	}
-	if m, ok := val.(map[string]any); ok {
+	switch val := val.(type) {
+	default:
+		return fmt.Sprintf("%v(%T)", val, val)
+	case string:
+		return val
+	case bool:
+		return val
+	case int64:
+		return val
+	case float64:
+		return val
+	case time.Time:
+		return val.Local().Format(time.DateTime)
+	case *goja.Object:
+		toString, ok := goja.AssertFunction(val.Get("toString"))
+		if ok {
+			ret, _ := toString(val)
+			return ret
+		} else {
+			return val.String()
+		}
+	case map[string]any:
+		keys := []string{}
+		for k := range val {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
 		f := []string{}
-		for k, v := range m {
-			f = append(f, fmt.Sprintf("%s:%v", k, v))
+		for _, k := range keys {
+			v := val[k]
+			f = append(f, fmt.Sprintf("%s:%v", k, anyToPrintable(v)))
 		}
 		return fmt.Sprintf("{%s}", strings.Join(f, ", "))
-	}
-	if a, ok := val.([]any); ok {
+	case []byte:
+		return string(val)
+	case []any:
 		f := []string{}
-		for _, v := range a {
+		for _, v := range val {
+			f = append(f, fmt.Sprintf("%v", anyToPrintable(v)))
+		}
+		return fmt.Sprintf("[%s]", strings.Join(f, ", "))
+	case []float64:
+		f := []string{}
+		for _, v := range val {
 			f = append(f, fmt.Sprintf("%v", v))
 		}
 		return fmt.Sprintf("[%s]", strings.Join(f, ", "))
-	}
-	if a, ok := val.([]float64); ok {
+	case [][]float64:
 		f := []string{}
-		for _, v := range a {
-			f = append(f, fmt.Sprintf("%v", v))
-		}
-		return fmt.Sprintf("[%s]", strings.Join(f, ", "))
-	}
-	if a, ok := val.([][]float64); ok {
-		f := []string{}
-		for _, vv := range a {
+		for _, vv := range val {
 			fv := []string{}
 			for _, v := range vv {
 				fv = append(fv, fmt.Sprintf("%v", v))
@@ -105,5 +151,4 @@ func valueToPrintable(value goja.Value) any {
 		}
 		return fmt.Sprintf("[%s]", strings.Join(f, ", "))
 	}
-	return fmt.Sprintf("%v", val)
 }

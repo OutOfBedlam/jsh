@@ -1,0 +1,35 @@
+//go:build windows
+
+package jsh
+
+import (
+	"os/exec"
+
+	"github.com/dop251/goja"
+)
+
+func (jr *JSRuntime) exec0(ex *exec.Cmd) goja.Value {
+	ex.Stdin = jr.Env.Reader()
+	ex.Stdout = jr.Env.Writer()
+	ex.Stderr = jr.Env.Writer()
+
+	// Windows doesn't support process groups like Unix
+	// Just run the process directly
+	if err := ex.Start(); err != nil {
+		return jr.vm.NewGoError(err)
+	}
+
+	// wait for process to finish
+	var result goja.Value
+	if err := ex.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result = jr.vm.ToValue(exitErr.ExitCode())
+		} else {
+			result = jr.vm.NewGoError(err)
+		}
+	} else {
+		result = jr.vm.ToValue(0)
+	}
+
+	return result
+}

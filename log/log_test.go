@@ -210,7 +210,7 @@ func TestValueToPrintable(t *testing.T) {
 	tests := []struct {
 		name     string
 		script   string
-		expected string
+		expected any
 	}{
 		{
 			name:     "simple string",
@@ -220,22 +220,22 @@ func TestValueToPrintable(t *testing.T) {
 		{
 			name:     "number",
 			script:   `42`,
-			expected: "42",
+			expected: int64(42),
 		},
 		{
 			name:     "object",
 			script:   `({a: 1, b: 2})`,
-			expected: "{", // Should contain object representation
+			expected: "{a:1, b:2}",
 		},
 		{
 			name:     "array",
-			script:   `[1, 2, 3]`,
-			expected: "[",
+			script:   `[1,2,3]`,
+			expected: "[1, 2, 3]",
 		},
 		{
 			name:     "nested array",
-			script:   `[[1, 2], [3, 4]]`,
-			expected: "[",
+			script:   `[[1,2],[3,4]]`,
+			expected: "[[1, 2], [3, 4]]",
 		},
 	}
 
@@ -247,9 +247,8 @@ func TestValueToPrintable(t *testing.T) {
 			}
 
 			result := valueToPrintable(val)
-			resultStr := result.(string)
-			if !strings.Contains(resultStr, tt.expected) {
-				t.Errorf("expected result to contain '%s', got '%s'", tt.expected, resultStr)
+			if result != tt.expected {
+				t.Errorf("expected result '%s(%T)', got '%s(%T)'", tt.expected, tt.expected, result, result)
 			}
 		})
 	}
