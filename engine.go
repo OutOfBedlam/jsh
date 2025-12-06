@@ -178,6 +178,7 @@ func (jr *JSRuntime) Run() error {
 		jr.exitCode = -1
 		return err
 	}
+	jr.vm.RunString(`runtime.start();`)
 	return nil
 }
 

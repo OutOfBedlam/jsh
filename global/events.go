@@ -1,7 +1,9 @@
 package global
 
 import (
+	"errors"
 	"slices"
+	"sync"
 
 	"github.com/dop251/goja"
 )
@@ -69,27 +71,85 @@ func Publish(objectID objectID, eventType EventType, args ...goja.Value) {
 	}
 }
 
-// EventLoopAdd registers start and stop functions for the global event loop.
-func EventLoopAdd(start func(), stop func()) {
-	globalEventStarts = append(globalEventStarts, start)
-	globalEventStops = append(globalEventStops, stop)
+// EventLoop registers start and stop functions for the global event loop.
+// The obj parameter is the JavaScript object that will have event listener
+// methods added to it. `addEventListener()` and `on()`.
+func EventLoop(obj *goja.Object, vm *goja.Runtime, events []string, start func(), stop func()) {
+	if start != nil {
+		globalEventStarts = append(globalEventStarts, start)
+	}
+	if stop != nil {
+		globalEventStops = append(globalEventStops, stop)
+	}
+
+	// obj.addEventListener('eventType', handler)
+	obj.Set("addEventListener", func(call goja.FunctionCall) goja.Value {
+		eventType := call.Argument(0).String()
+		if slices.Contains(events, eventType) == false {
+			return vm.NewGoError(errors.New("unknown event type: " + eventType))
+		}
+		handler, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			return vm.NewGoError(errors.New("event handler must be a function"))
+		}
+		AddSubscriber(ObjectID(obj), eventType, handler)
+		return goja.Undefined()
+	})
+	// obj.on('eventType', handler)
+	obj.Set("on", func(call goja.FunctionCall) goja.Value {
+		eventType := call.Argument(0).String()
+		if slices.Contains(events, eventType) == false {
+			return vm.NewGoError(errors.New("unknown event type: " + eventType))
+		}
+		handler, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			return vm.NewGoError(errors.New("event handler must be a function"))
+		}
+		SetSubscriber(ObjectID(obj), eventType, handler)
+		return goja.Undefined()
+	})
 }
 
 var globalEventStarts []func()
 var globalEventStops []func()
-var globalEventCh chan struct{}
+var globalEventStopCh chan struct{}
+var globalEventStopOnce *sync.Once
 var globalEventCloseCh chan struct{}
 
 func EventLoopStart() {
-	globalEventCh = make(chan struct{})
-	globalEventCloseCh = make(chan struct{})
-	defer close(globalEventCloseCh)
-
-	for _, loop := range globalEventStarts {
-		go loop()
+	if globalEventStopOnce != nil {
+		return // already started
 	}
+	globalEventStopOnce = &sync.Once{}
+	globalEventStopCh = make(chan struct{})
+	globalEventCloseCh = make(chan struct{})
+	defer func() {
+		close(globalEventCloseCh)
+		globalEventStopOnce.Do(func() {
+			close(globalEventStopCh)
+		})
+	}()
 
-	<-globalEventCh
+	wg := sync.WaitGroup{}
+	for _, loop := range globalEventStarts {
+		wg.Add(1)
+		go func(loopFunc func()) {
+			defer wg.Done()
+			loopFunc()
+		}(loop)
+	}
+	doneCh := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(doneCh)
+	}()
+
+	select {
+	case <-doneCh:
+		// all event loops exited
+	case <-globalEventStopCh:
+		// stop signal received
+	}
 
 	slices.Reverse(globalEventStops)
 	for _, stop := range globalEventStops {
@@ -98,13 +158,19 @@ func EventLoopStart() {
 }
 
 func EventLoopStop() {
-	close(globalEventCh)
+	if globalEventStopOnce == nil {
+		return // not started
+	}
+	globalEventStopOnce.Do(func() {
+		close(globalEventStopCh)
+	})
 	<-globalEventCloseCh
 }
 
 // EventLoopReset clears all registered event loop functions.
-// This is useful for testing to ensure a clean state between tests.
+// This is purposed for testing to ensure a clean state between tests.
 func EventLoopReset() {
+	globalEventStopOnce = nil
 	globalEventStarts = nil
 	globalEventStops = nil
 	subscribers = make(map[objectID]Subscribers)

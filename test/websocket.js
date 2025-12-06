@@ -7,16 +7,13 @@ ws.addEventListener('open', () => {
 ws.addEventListener('message', (event) => {
     console.printf('%v', event.data);
 });
-ws.addEventListener('close', () => {
-    console.printf('WebSocket connection closed\n');
+ws.addEventListener('close', (event) => {
+    console.println('WebSocket connection closed:', event);
 });
 ws.addEventListener('error', (event) => {
-    console.printf('WebSocket error: %v\n', event.data);
+    console.println('WebSocket error:', event);
 });
 
 runtime.addShutdownHook(() => {
-    console.println('Shutting down WebSocket connection...');
-    ws.close();
+    console.println('Shutting down WebSocket client...');
 });
-
-runtime.start();

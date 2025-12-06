@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"slices"
 	"sync"
 
 	"github.com/OutOfBedlam/jsh/global"
@@ -35,12 +34,13 @@ func newWebSocket(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 			addr:    addr,
 			options: options,
 		}
-		ws.obj.Set("addEventListener", ws.addEventListener)
-		ws.obj.Set("on", ws.on)
 		ws.obj.Set("close", ws.Close)
 		ws.obj.Set("send", ws.send)
 
-		global.EventLoopAdd(ws.Open, ws.Close)
+		events := []string{
+			"open", "close", "message", "error",
+		}
+		global.EventLoop(ws.obj, rt, events, ws.Open, ws.Close)
 
 		return ws.obj
 	}
@@ -55,48 +55,10 @@ type WebSocket struct {
 	mu      sync.RWMutex
 }
 
-var EventTypes []string = []string{
-	"open",
-	"message",
-	"error",
-	"close",
-}
-
-type Event struct {
-	Type string
-	Data goja.Value
-}
-
 func ErrorOrUndefined(err error) goja.Value {
 	if err != nil {
 		return goja.New().NewGoError(err)
 	}
-	return goja.Undefined()
-}
-
-func (ws *WebSocket) addEventListener(call goja.FunctionCall) goja.Value {
-	eventType := call.Argument(0).String()
-	if slices.Contains(EventTypes, eventType) == false {
-		return ws.rt.NewGoError(errors.New("unknown event type: " + eventType))
-	}
-	handler, ok := goja.AssertFunction(call.Argument(1))
-	if !ok {
-		return ws.rt.NewGoError(errors.New("event handler must be a function"))
-	}
-	global.AddSubscriber(global.ObjectID(ws.obj), eventType, handler)
-	return goja.Undefined()
-}
-
-func (ws *WebSocket) on(call goja.FunctionCall) goja.Value {
-	eventType := call.Argument(0).String()
-	if slices.Contains(EventTypes, eventType) == false {
-		return ws.rt.NewGoError(errors.New("unknown event type: " + eventType))
-	}
-	handler, ok := goja.AssertFunction(call.Argument(1))
-	if !ok {
-		return ws.rt.NewGoError(errors.New("event handler must be a function"))
-	}
-	global.SetSubscriber(global.ObjectID(ws.obj), eventType, handler)
 	return goja.Undefined()
 }
 
