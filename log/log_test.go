@@ -2,9 +2,11 @@ package log
 
 import (
 	"bytes"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -334,5 +336,310 @@ func TestDefaultWriter(t *testing.T) {
 	// buf1 should not have changed
 	if buf1.String() != "test1" {
 		t.Errorf("expected buf1 to still be 'test1', got '%s'", buf1.String())
+	}
+}
+
+func TestPrintf(t *testing.T) {
+	buf := &bytes.Buffer{}
+	defaultWriter = buf
+
+	Printf("Hello %s, number: %d", "World", 42)
+	output := buf.String()
+	expected := "Hello World, number: 42"
+	if output != expected {
+		t.Errorf("expected '%s', got '%s'", expected, output)
+	}
+}
+
+func TestConsolePrintf(t *testing.T) {
+	vm := goja.New()
+	buf := &bytes.Buffer{}
+
+	con := SetConsole(vm, buf)
+	vm.Set("console", con)
+
+	tests := []struct {
+		name     string
+		script   string
+		expected string
+	}{
+		{
+			name:     "string formatting",
+			script:   `console.printf("Hello %s", "World")`,
+			expected: "Hello World",
+		},
+		{
+			name:     "number formatting",
+			script:   `console.printf("Number: %d", 42)`,
+			expected: "Number: 42",
+		},
+		{
+			name:     "multiple args",
+			script:   `console.printf("%s: %d", "count", 5)`,
+			expected: "count: 5",
+		},
+		{
+			name:     "no args",
+			script:   `console.printf()`,
+			expected: "",
+		},
+		{
+			name:     "format only",
+			script:   `console.printf("no placeholders")`,
+			expected: "no placeholders",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf.Reset()
+			_, err := vm.RunString(tt.script)
+			if err != nil {
+				t.Fatalf("failed to run console.printf: %v", err)
+			}
+
+			output := buf.String()
+			if output != tt.expected {
+				t.Errorf("expected '%s', got '%s'", tt.expected, output)
+			}
+		})
+	}
+}
+
+func TestAnyToPrintableTypes(t *testing.T) {
+	vm := goja.New()
+
+	tests := []struct {
+		name     string
+		script   string
+		contains string
+	}{
+		{
+			name:     "null",
+			script:   `null`,
+			contains: "null",
+		},
+		{
+			name:     "boolean true",
+			script:   `true`,
+			contains: "true",
+		},
+		{
+			name:     "boolean false",
+			script:   `false`,
+			contains: "false",
+		},
+		{
+			name:     "float",
+			script:   `3.14`,
+			contains: "3.14",
+		},
+		{
+			name:     "string",
+			script:   `"test string"`,
+			contains: "test string",
+		},
+		{
+			name:     "byte array",
+			script:   `new Uint8Array([72, 101, 108, 108, 111])`,
+			contains: "Hello",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			con := SetConsole(vm, buf)
+			vm.Set("console", con)
+
+			script := "console.log(" + tt.script + ")"
+			_, err := vm.RunString(script)
+			if err != nil {
+				t.Fatalf("failed to run script: %v", err)
+			}
+
+			output := buf.String()
+			if !strings.Contains(output, tt.contains) {
+				t.Errorf("expected output to contain '%s', got '%s'", tt.contains, output)
+			}
+		})
+	}
+}
+
+func TestAnyToPrintableGojaObject(t *testing.T) {
+	vm := goja.New()
+
+	// Test goja.Object with custom toString
+	val, err := vm.RunString(`({ toString: function() { return "custom string"; } })`)
+	if err != nil {
+		t.Fatalf("failed to create object: %v", err)
+	}
+
+	obj := val.ToObject(vm)
+	result := anyToPrintable(obj)
+
+	// The toString method should be called
+	if !strings.Contains(result.(goja.Value).String(), "custom string") {
+		t.Errorf("expected result to contain 'custom string', got '%v'", result)
+	}
+}
+
+func TestAnyToPrintableGojaObjectNoToString(t *testing.T) {
+	vm := goja.New()
+
+	// Test goja.Object without toString
+	val, err := vm.RunString(`({key: "value"})`)
+	if err != nil {
+		t.Fatalf("failed to create object: %v", err)
+	}
+
+	obj := val.ToObject(vm)
+	result := anyToPrintable(obj)
+
+	// Should return the object's String() representation as a goja.Value
+	resultStr := fmt.Sprintf("%v", result)
+	if !strings.Contains(resultStr, "key") && !strings.Contains(resultStr, "Object") {
+		t.Errorf("expected result to contain object representation, got '%s'", resultStr)
+	}
+}
+
+func TestAnyToPrintableTimeType(t *testing.T) {
+	buf := &bytes.Buffer{}
+	defaultWriter = buf
+
+	// Test with Go time.Time directly
+	now := time.Now()
+	result := anyToPrintable(now)
+	expected := now.Local().Format(time.DateTime)
+	if result != expected {
+		t.Errorf("expected time format '%s', got '%s'", expected, result)
+	}
+}
+
+func TestAnyToPrintableFloatArrays(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected string
+	}{
+		{
+			name:     "float64 slice",
+			input:    []float64{1.5, 2.5, 3.5},
+			expected: "[1.5, 2.5, 3.5]",
+		},
+		{
+			name:     "2D float64 slice",
+			input:    [][]float64{{1.0, 2.0}, {3.0, 4.0}},
+			expected: "[[1, 2], [3, 4]]", // %v formats 1.0 as 1
+		},
+		{
+			name:     "empty float64 slice",
+			input:    []float64{},
+			expected: "[]",
+		},
+		{
+			name:     "empty 2D float64 slice",
+			input:    [][]float64{},
+			expected: "[]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := anyToPrintable(tt.input)
+			if result != tt.expected {
+				t.Errorf("expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestAnyToPrintableComplexObjects(t *testing.T) {
+	vm := goja.New()
+
+	tests := []struct {
+		name     string
+		script   string
+		contains []string
+	}{
+		{
+			name:     "nested object",
+			script:   `({outer: {inner: "value"}})`,
+			contains: []string{"outer", "inner", "value"},
+		},
+		{
+			name:     "object with null",
+			script:   `({key: null})`,
+			contains: []string{"key", "null"},
+		},
+		{
+			name:     "mixed type array",
+			script:   `[1, "string", true, null]`,
+			contains: []string{"1", "string", "true", "null"},
+		},
+		{
+			name:     "empty object",
+			script:   `({})`,
+			contains: []string{"{}"},
+		},
+		{
+			name:     "empty array",
+			script:   `[]`,
+			contains: []string{"[]"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			con := SetConsole(vm, buf)
+			vm.Set("console", con)
+
+			script := "console.log(" + tt.script + ")"
+			_, err := vm.RunString(script)
+			if err != nil {
+				t.Fatalf("failed to run script: %v", err)
+			}
+
+			output := buf.String()
+			for _, expected := range tt.contains {
+				if !strings.Contains(output, expected) {
+					t.Errorf("expected output to contain '%s', got '%s'", expected, output)
+				}
+			}
+		})
+	}
+}
+
+func TestConsoleInfo(t *testing.T) {
+	vm := goja.New()
+	buf := &bytes.Buffer{}
+
+	con := SetConsole(vm, buf)
+	vm.Set("console", con)
+
+	_, err := vm.RunString(`console.info("info message")`)
+	if err != nil {
+		t.Fatalf("failed to run console.info: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "INFO") || !strings.Contains(output, "info message") {
+		t.Errorf("expected output to contain 'INFO' and 'info message', got '%s'", output)
+	}
+}
+
+func TestAnyToPrintableDefaultCase(t *testing.T) {
+	// Test with a type that doesn't match any specific case
+	type CustomType struct {
+		Value string
+	}
+
+	custom := CustomType{Value: "test"}
+	result := anyToPrintable(custom)
+
+	resultStr := fmt.Sprintf("%v", result)
+	if !strings.Contains(resultStr, "CustomType") {
+		t.Errorf("expected result to contain type name 'CustomType', got '%s'", resultStr)
 	}
 }

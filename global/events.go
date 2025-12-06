@@ -101,3 +101,11 @@ func EventLoopStop() {
 	close(globalEventCh)
 	<-globalEventCloseCh
 }
+
+// EventLoopReset clears all registered event loop functions.
+// This is useful for testing to ensure a clean state between tests.
+func EventLoopReset() {
+	globalEventStarts = nil
+	globalEventStops = nil
+	subscribers = make(map[objectID]Subscribers)
+}

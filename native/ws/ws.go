@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"slices"
+	"sync"
 
 	"github.com/OutOfBedlam/jsh/global"
 	"github.com/dop251/goja"
@@ -51,6 +52,7 @@ type WebSocket struct {
 	addr    string
 	options *goja.Object
 	conn    *websocket.Conn
+	mu      sync.RWMutex
 }
 
 var EventTypes []string = []string{
@@ -99,7 +101,13 @@ func (ws *WebSocket) on(call goja.FunctionCall) goja.Value {
 }
 
 func (ws *WebSocket) Send(data string) error {
-	return ws.conn.WriteMessage(websocket.TextMessage, []byte(data))
+	ws.mu.RLock()
+	conn := ws.conn
+	ws.mu.RUnlock()
+	if conn == nil {
+		return errors.New("websocket connection is closed")
+	}
+	return conn.WriteMessage(websocket.TextMessage, []byte(data))
 }
 
 func (ws *WebSocket) send(call goja.FunctionCall) goja.Value {
@@ -124,12 +132,22 @@ func (ws *WebSocket) Open() {
 		global.Publish(global.ObjectID(ws.obj), "error", ws.rt.NewGoError(err))
 		return
 	} else {
+		ws.mu.Lock()
 		ws.conn = s
+		ws.mu.Unlock()
 		global.Publish(global.ObjectID(ws.obj), "open", goja.Undefined())
 	}
 
 	for {
-		typ, message, err := ws.conn.ReadMessage()
+		ws.mu.RLock()
+		conn := ws.conn
+		ws.mu.RUnlock()
+
+		if conn == nil {
+			return
+		}
+
+		typ, message, err := conn.ReadMessage()
 		if err != nil {
 			if err != io.EOF {
 				global.Publish(global.ObjectID(ws.obj), "close", ws.rt.ToValue(err.Error()))
@@ -144,6 +162,9 @@ func (ws *WebSocket) Open() {
 }
 
 func (ws *WebSocket) Close() {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+
 	if ws.conn != nil {
 		ws.conn.Close()
 		ws.conn = nil

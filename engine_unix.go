@@ -20,9 +20,13 @@ func (jr *JSRuntime) exec0(ex *exec.Cmd) goja.Value {
 
 	// Get terminal file descriptor
 	ttyFd := int(os.Stdin.Fd())
+	isTTY := isatty(ttyFd)
 
 	// Get shell's process group ID
-	shellPgid := syscall.Getpgrp()
+	var shellPgid int
+	if isTTY {
+		shellPgid = syscall.Getpgrp()
+	}
 
 	// child process group, false: not separate
 	ex.SysProcAttr = &syscall.SysProcAttr{
@@ -30,30 +34,35 @@ func (jr *JSRuntime) exec0(ex *exec.Cmd) goja.Value {
 		Pgid:    0,    // use child's PID as pgid
 	}
 
-	// Ignore TTY-related signals during job control operations
-	signal.Ignore(syscall.SIGTTOU)
-	signal.Ignore(syscall.SIGTTIN)
-	signal.Ignore(syscall.SIGTSTP)
-	defer func() {
-		signal.Reset(syscall.SIGTTOU)
-		signal.Reset(syscall.SIGTTIN)
-		signal.Reset(syscall.SIGTSTP)
-	}()
+	if isTTY {
+		// Ignore TTY-related signals during job control operations
+		signal.Ignore(syscall.SIGTTOU)
+		signal.Ignore(syscall.SIGTTIN)
+		signal.Ignore(syscall.SIGTSTP)
+		defer func() {
+			signal.Reset(syscall.SIGTTOU)
+			signal.Reset(syscall.SIGTTIN)
+			signal.Reset(syscall.SIGTSTP)
+		}()
+	}
 
 	// child process start
 	if err := ex.Start(); err != nil {
 		return jr.vm.NewGoError(err)
 	}
 
-	childPgid := ex.Process.Pid
-	// give terminal control to child process
-	_, _, err := syscall.Syscall(
-		syscall.SYS_IOCTL,
-		uintptr(ttyFd),
-		syscall.TIOCSPGRP,
-		uintptr(unsafe.Pointer(&childPgid)))
-	if err != 0 {
-		fmt.Printf("failed to set foreground: %v\n", err)
+	if isTTY {
+
+		childPgid := ex.Process.Pid
+		// give terminal control to child process
+		_, _, err := syscall.Syscall(
+			syscall.SYS_IOCTL,
+			uintptr(ttyFd),
+			syscall.TIOCSPGRP,
+			uintptr(unsafe.Pointer(&childPgid)))
+		if err != 0 {
+			fmt.Printf("failed to set foreground: %v\n", err)
+		}
 	}
 
 	// wait for process to finish
@@ -69,15 +78,29 @@ func (jr *JSRuntime) exec0(ex *exec.Cmd) goja.Value {
 	}
 
 	// restore this parent process to foreground
-	_, _, err = syscall.Syscall(
-		syscall.SYS_IOCTL,
-		uintptr(os.Stdin.Fd()),
-		syscall.TIOCSPGRP,
-		uintptr(unsafe.Pointer(&shellPgid)))
-	if err != 0 {
-		fmt.Printf("failed to restore foreground: %v\n", err)
-	} else {
-		fmt.Println()
+	if isTTY {
+		_, _, err := syscall.Syscall(
+			syscall.SYS_IOCTL,
+			uintptr(os.Stdin.Fd()),
+			syscall.TIOCSPGRP,
+			uintptr(unsafe.Pointer(&shellPgid)))
+		if err != 0 {
+			fmt.Printf("failed to restore foreground: %v\n", err)
+		} else {
+			fmt.Println()
+		}
 	}
 	return result
+}
+
+// isatty checks if fd is a terminal
+func isatty(fd int) bool {
+	var termios syscall.Termios
+	_, _, err := syscall.Syscall6(
+		syscall.SYS_IOCTL,
+		uintptr(fd),
+		syscall.TCGETS,
+		uintptr(unsafe.Pointer(&termios)),
+		0, 0, 0)
+	return err == 0
 }

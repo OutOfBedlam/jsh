@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OutOfBedlam/jsh/global"
 	"github.com/dop251/goja"
 	"github.com/gorilla/websocket"
 )
@@ -103,6 +104,9 @@ func TestWebSocketConstructor(t *testing.T) {
 }
 
 func TestWebSocketConnection(t *testing.T) {
+	// Reset event loop state before test
+	global.EventLoopReset()
+
 	server := httptest.NewServer(http.HandlerFunc(echoServer))
 	defer server.Close()
 
@@ -131,6 +135,10 @@ func TestWebSocketConnection(t *testing.T) {
 		t.Fatalf("Failed to setup WebSocket: %v", err)
 	}
 
+	// Start event loop
+	go global.EventLoopStart()
+	defer global.EventLoopStop()
+
 	select {
 	case <-opened:
 		// Connection opened successfully
@@ -140,6 +148,9 @@ func TestWebSocketConnection(t *testing.T) {
 }
 
 func TestWebSocketSendReceive(t *testing.T) {
+	// Reset event loop state before test
+	global.EventLoopReset()
+
 	server := httptest.NewServer(http.HandlerFunc(echoServer))
 	defer server.Close()
 
@@ -173,6 +184,10 @@ func TestWebSocketSendReceive(t *testing.T) {
 		t.Fatalf("Failed to setup WebSocket: %v", err)
 	}
 
+	// Start event loop
+	go global.EventLoopStart()
+	defer global.EventLoopStop()
+
 	select {
 	case msg := <-received:
 		if msg != "test message" {
@@ -184,6 +199,9 @@ func TestWebSocketSendReceive(t *testing.T) {
 }
 
 func TestWebSocketClose(t *testing.T) {
+	// Reset event loop state before test
+	global.EventLoopReset()
+
 	server := httptest.NewServer(http.HandlerFunc(echoServer))
 	defer server.Close()
 
@@ -215,11 +233,18 @@ func TestWebSocketClose(t *testing.T) {
 		t.Fatalf("Failed to setup WebSocket: %v", err)
 	}
 
+	// Start event loop
+	go global.EventLoopStart()
+	defer global.EventLoopStop()
+
 	// Note: close event might not fire immediately, so we give it some time
 	time.Sleep(500 * time.Millisecond)
 }
 
 func TestWebSocketMultipleEventListeners(t *testing.T) {
+	// Reset event loop state before test
+	global.EventLoopReset()
+
 	server := httptest.NewServer(http.HandlerFunc(broadcastServer))
 	defer server.Close()
 
@@ -242,12 +267,16 @@ func TestWebSocketMultipleEventListeners(t *testing.T) {
 	_, err := rt.RunString(`
 		const WS = exports.WebSocket;
 		const ws = new WS(testURL);
-		ws.on("message", incrementCounter);
-		ws.on("message", incrementCounter);
+		ws.addEventListener("message", incrementCounter);
+		ws.addEventListener("message", incrementCounter);
 	`)
 	if err != nil {
 		t.Fatalf("Failed to setup WebSocket: %v", err)
 	}
+
+	// Start event loop
+	go global.EventLoopStart()
+	defer global.EventLoopStop()
 
 	time.Sleep(500 * time.Millisecond)
 
@@ -287,6 +316,9 @@ func TestWebSocketInvalidEventType(t *testing.T) {
 }
 
 func TestWebSocketConnectionError(t *testing.T) {
+	// Reset event loop state before test
+	global.EventLoopReset()
+
 	rt := goja.New()
 	module := rt.NewObject()
 	exports := rt.NewObject()
@@ -310,6 +342,10 @@ func TestWebSocketConnectionError(t *testing.T) {
 		t.Fatalf("Failed to setup WebSocket: %v", err)
 	}
 
+	// Start event loop
+	go global.EventLoopStart()
+	defer global.EventLoopStop()
+
 	select {
 	case <-errorReceived:
 		// Error received as expected
@@ -327,13 +363,10 @@ func TestWebSocketSendWithoutConnection(t *testing.T) {
 	}
 
 	// Send should fail with nil connection
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("Expected panic when sending without connection")
-		}
-	}()
-
-	ws.Send("test")
+	err := ws.Send("test")
+	if err == nil {
+		t.Error("Expected error when sending without connection")
+	}
 }
 
 func TestErrorOrUndefined(t *testing.T) {
