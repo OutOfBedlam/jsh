@@ -52,6 +52,15 @@ type Shell struct {
 	history *History
 }
 
+var banner = "\n" +
+	"\033[93m     ██╗ ███████╗ ██╗  ██╗" + "\n" +
+	"\033[92m     ██║ ██╔════╝ ██║  ██║" + "\n" +
+	"\033[96m     ██║ ███████╗ ███████║" + "\n" +
+	"\033[94m██   ██║ ╚════██║ ██╔══██║" + "\n" +
+	"\033[95m╚█████╔╝ ███████║ ██║  ██║" + "\n" +
+	"\033[91m ╚════╝  ╚══════╝ ╚═╝  ╚═╝" + "\n" +
+	"\033[0m"
+
 func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 	var ed multiline.Editor
 	ed.SetPrompt(sh.prompt)
@@ -71,8 +80,10 @@ func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 		Candidates: sh.getCompletionCandidates,
 	})
 	ctx := context.Background()
+	log.Println(banner)
 	for {
 		var line string
+		var forHistory string
 		if input, err := ed.Read(ctx); err != nil {
 			if err == readline.CtrlC || err == io.EOF {
 				return sh.rt.ToValue(0)
@@ -80,7 +91,7 @@ func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 			log.Printf("Error input: %v\n", err)
 			return sh.rt.ToValue(1)
 		} else {
-			sh.history.Add(strings.Join(input, "\n"))
+			forHistory = strings.Join(input, "\n")
 			for i, ln := range input {
 				input[i] = strings.TrimSuffix(ln, `\`)
 			}
@@ -90,6 +101,8 @@ func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 		if _, alive := sh.process(line); !alive {
 			return sh.rt.ToValue(0)
 		}
+		// this makes to prevent adding 'exit' command to history
+		sh.history.Add(forHistory)
 	}
 }
 

@@ -20,4 +20,4 @@ jobs:
           go-version: '1.21'
       
       - name: Run tests
-        run: go test ./... -timeout 5m -cover
+        run: go test ./... -timeout 5m -cover -race

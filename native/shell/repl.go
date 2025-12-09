@@ -29,7 +29,7 @@ func repl(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 	}
 }
 
-const banner = "\033[1;36m╔══════════════════════════════════════╗\n" +
+const replBanner = "\033[1;36m╔══════════════════════════════════════╗\n" +
 	"║     Welcome to \033[1;35mJSH REPL\033[1;36m              ║\n" +
 	"╚══════════════════════════════════════╝\033[0m\n" +
 	"\033[33mCommands:\033[0m\n" +
@@ -44,7 +44,7 @@ func (repl *Repl) Loop(call goja.FunctionCall) goja.Value {
 	ed.SetHistory(repl.history)
 	ed.SetHistoryCycling(true)
 	ctx := context.Background()
-	repl.println(repl.rt.ToValue(banner))
+	repl.println(repl.rt.ToValue(replBanner))
 	for {
 		var input string
 		if lines, err := ed.Read(ctx); err != nil {

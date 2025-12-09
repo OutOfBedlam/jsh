@@ -150,12 +150,17 @@ func (jr *JSRuntime) Run() error {
 	jr.vm.Set("console", log.SetConsole(jr.vm, jr.Env.Writer()))
 	jr.vm.Set("now", jr.doNow)
 
+	eventLoop := global.NewEventLoop(jr.vm)
+	jr.vm.Set("eventLoop", eventLoop)
+	jr.vm.Set("setTimeout", eventLoop.SetTimeout)
+	jr.vm.Set("clearTimeout", eventLoop.ClearTimeout)
+	go eventLoop.Start()
+	defer eventLoop.Stop()
+
 	obj := jr.vm.NewObject()
 	jr.vm.Set("runtime", obj)
-	obj.Set("start", global.EventLoopStart)
-	obj.Set("stop", global.EventLoopStop)
 	obj.Set("addShutdownHook", jr.doAddShutdownHook)
-	obj.Set("interrupt", jr.doInterrupt)
+	obj.Set("exit", jr.doExit)
 	obj.Set("env", jr.Env)
 	obj.Set("args", jr.doArgs())
 	obj.Set("exec", jr.doExec)
@@ -174,11 +179,10 @@ func (jr *JSRuntime) Run() error {
 		return err
 	}
 
-	if _, err := jr.vm.RunProgram(program); err != nil {
+	if _, err := eventLoop.RunProgram(program); err != nil {
 		jr.exitCode = -1
 		return err
 	}
-	jr.vm.RunString(`runtime.start();`)
 	return nil
 }
 
@@ -194,12 +198,16 @@ func (jr *JSRuntime) doAddShutdownHook(hook func()) {
 	jr.shutdownHooks = append(jr.shutdownHooks, hook)
 }
 
-func (jr *JSRuntime) doInterrupt(call goja.FunctionCall) goja.Value {
-	arr := make([]any, len(call.Arguments))
-	for i, arg := range call.Arguments {
-		arr[i] = arg.Export()
+type Exit struct {
+	Code int
+}
+
+func (jr *JSRuntime) doExit(call goja.FunctionCall) goja.Value {
+	exit := Exit{Code: 0}
+	if len(call.Arguments) > 0 {
+		exit.Code = int(call.Argument(0).ToInteger())
 	}
-	jr.vm.Interrupt(arr)
+	jr.vm.Interrupt(exit)
 	return goja.Undefined()
 }
 

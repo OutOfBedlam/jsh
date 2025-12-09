@@ -37,10 +37,11 @@ func newWebSocket(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 		ws.obj.Set("close", ws.Close)
 		ws.obj.Set("send", ws.send)
 
-		events := []string{
-			"open", "close", "message", "error",
+		if el := global.GetEventLoop(rt); el != nil {
+			el.Register(ws.obj, ws.Open, ws.Close, []string{
+				"open", "close", "message", "error",
+			})
 		}
-		global.EventLoop(ws.obj, rt, events, ws.Open, ws.Close)
 
 		return ws.obj
 	}
@@ -88,16 +89,23 @@ func (ws *WebSocket) send(call goja.FunctionCall) goja.Value {
 	return ErrorOrUndefined(ws.Send(data))
 }
 
+func (ws *WebSocket) fireEvent(eventType string, args ...goja.Value) {
+	if el := global.GetEventLoop(ws.rt); el != nil {
+		el.DispatchEvent(ws.obj, eventType, args...)
+		return
+	}
+}
+
 func (ws *WebSocket) Open() {
 	if s, _, err := websocket.DefaultDialer.Dial(ws.addr, nil); err != nil {
 		log.Printf("WebSocket connection error: %v", err)
-		global.Publish(global.ObjectID(ws.obj), "error", ws.rt.NewGoError(err))
+		ws.fireEvent("error", ws.rt.NewGoError(err))
 		return
 	} else {
 		ws.mu.Lock()
 		ws.conn = s
 		ws.mu.Unlock()
-		global.Publish(global.ObjectID(ws.obj), "open", goja.Undefined())
+		ws.fireEvent("open", goja.Undefined())
 	}
 
 	for {
@@ -112,14 +120,18 @@ func (ws *WebSocket) Open() {
 		typ, message, err := conn.ReadMessage()
 		if err != nil {
 			if err != io.EOF {
-				global.Publish(global.ObjectID(ws.obj), "close", ws.rt.ToValue(err.Error()))
+				ws.fireEvent("close", ws.rt.ToValue(err.Error()))
 			}
 			return
 		}
-		data := ws.rt.NewObject()
-		data.Set("data", ws.rt.ToValue(message))
-		data.Set("type", ws.rt.ToValue(typ))
-		global.Publish(global.ObjectID(ws.obj), "message", data)
+		data := map[string]any{}
+		if typ == websocket.TextMessage {
+			data["data"] = string(message)
+		} else {
+			data["data"] = message
+		}
+		data["type"] = typ
+		ws.fireEvent("message", ws.rt.ToValue(data))
 	}
 }
 

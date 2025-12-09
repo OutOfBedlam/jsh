@@ -51,18 +51,26 @@ func LoadSource(env Env, moduleName string) ([]byte, error) {
 		return nil, fmt.Errorf("no filesystem available to load module: %s", moduleName)
 	}
 
-	var paths []string
-	if v := env.Get("PATH"); v == nil {
-		paths = []string{""}
-	} else {
-		paths = strings.Split(v.(string), ":")
-	}
-	for _, p := range paths {
-		path := filepath.Join(p, moduleName)
-		path = CleanPath(path)
-		b, err := loadSource(fileSystem, path)
+	if strings.HasPrefix(moduleName, "/") {
+		moduleName = CleanPath(moduleName)
+		b, err := loadSource(fileSystem, moduleName)
 		if err == nil {
 			return b, nil
+		}
+	} else {
+		var paths []string
+		if v := env.Get("PATH"); v == nil {
+			paths = []string{""}
+		} else {
+			paths = strings.Split(v.(string), ":")
+		}
+		for _, p := range paths {
+			path := filepath.Join(p, moduleName)
+			path = CleanPath(path)
+			b, err := loadSource(fileSystem, path)
+			if err == nil {
+				return b, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("module not found: %s", moduleName)

@@ -180,6 +180,15 @@ func TestJsh(t *testing.T) {
 		{
 			name: "runtime_exec",
 			script: `
+				runtime.exec("hello.js");
+			`,
+			output: []string{
+				"Hello undefined from demo.js!",
+			},
+		},
+		{
+			name: "runtime_exec_args",
+			script: `
 				runtime.exec("hello.js", "世界");
 			`,
 			output: []string{
@@ -190,6 +199,15 @@ func TestJsh(t *testing.T) {
 			name: "runtime_exec_string",
 			script: `
 				runtime.execString("console.log('Hello World')");
+			`,
+			output: []string{
+				"INFO  Hello World",
+			},
+		},
+		{
+			name: "runtime_exec_string_arg",
+			script: `
+				runtime.execString("console.log('Hello '+runtime.args[0])", "World");
 			`,
 			output: []string{
 				"INFO  Hello World",
