@@ -1,16 +1,15 @@
 package ws
 
 import (
-	"context"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
 
-	"github.com/OutOfBedlam/jsh/global"
-	"github.com/dop251/goja"
+	"github.com/OutOfBedlam/jsh"
+	"github.com/dop251/goja_nodejs/require"
 	"github.com/gorilla/websocket"
 )
 
@@ -39,377 +38,270 @@ func echoServer(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// broadcastServer sends a message to clients immediately after connection
-func broadcastServer(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	// Send initial message
-	if err := conn.WriteMessage(websocket.TextMessage, []byte("hello from server")); err != nil {
-		return
-	}
-
-	// Keep connection alive
-	for {
-		_, _, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-	}
+type TestCase struct {
+	name   string
+	script string
+	input  []string
+	output []string
+	err    string
+	vars   map[string]any
 }
 
-func TestWebSocketModule(t *testing.T) {
-	rt := goja.New()
-	module := rt.NewObject()
-	exports := rt.NewObject()
-	module.Set("exports", exports)
+func RunTest(t *testing.T, tc TestCase) {
+	t.Helper()
+	t.Run(tc.name, func(t *testing.T) {
+		t.Helper()
+		env := &jsh.TestEnv{
+			// ExecBuilderFunc: testExecBuilder, // no exec
+			Mounts: map[string]fs.FS{"/work": os.DirFS("./test/")},
+			Natives: map[string]require.ModuleLoader{
+				"ws": Module,
+			},
+			Vars: tc.vars,
+		}
+		env.Input.WriteString(strings.Join(tc.input, "\n") + "\n")
 
-	Module(rt, module)
+		jr := &jsh.JSRuntime{
+			Name:   tc.name,
+			Source: tc.script,
+			Env:    env,
+		}
+		if err := jr.Run(); err != nil {
+			if tc.err == "" || !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			return
+		}
 
-	if exports.Get("WebSocket") == nil {
-		t.Fatal("WebSocket constructor not exported")
-	}
+		gotOutput := env.Output.String()
+		lines := strings.Split(gotOutput, "\n")
+		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
+			t.Fatalf("Expected %d output lines, got %d\n%s", len(tc.output), len(lines)-1, gotOutput)
+		}
+		for i, expectedLine := range tc.output {
+			if lines[i] != expectedLine {
+				t.Errorf("Output line %d: expected %q, got %q", i, expectedLine, lines[i])
+			}
+		}
+	})
 }
 
-func TestWebSocketConstructor(t *testing.T) {
-	rt := goja.New()
-	module := rt.NewObject()
-	exports := rt.NewObject()
-	module.Set("exports", exports)
-	Module(rt, module)
-
-	rt.Set("exports", exports)
-
-	// Test with no arguments
-	_, err := rt.RunString(`
-		const WS = exports.WebSocket;
-		try {
-			new WS();
-		} catch(e) {
-			throw e;
-		}
-	`)
-	if err == nil {
-		t.Error("Expected error when constructing WebSocket without arguments")
+func TestWebSocket(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "module",
+			script: `
+				const {WebSocket} = require("ws");
+				console.println("CONNECTING:", WebSocket.CONNECTING);
+				console.println("OPEN:", WebSocket.OPEN);
+				console.println("CLOSING:", WebSocket.CLOSING);
+				console.println("CLOSED:", WebSocket.CLOSED);
+			`,
+			output: []string{
+				"CONNECTING: 0",
+				"OPEN: 1",
+				"CLOSING: 2",
+				"CLOSED: 3",
+			},
+		},
+		{
+			name: "constructor-no-args",
+			script: `
+				const m1 = require("ws");
+				try {
+					new m1.WebSocket();
+				} catch(e) {
+					throw e;
+				}
+			`,
+			err: "URL must be a string",
+		},
+		{
+			name: "constructor",
+			script: `
+				const m2 = require("ws");
+				const ws = new m2.WebSocket("ws://localhost:8080");
+				console.println(ws.url);
+			`,
+			output: []string{
+				"ws://localhost:8080",
+			},
+		},
 	}
-
-	// Test with valid URL
-	_, err = rt.RunString(`
-		const ws = new exports.WebSocket("ws://localhost:8080");
-	`)
-	if err != nil {
-		t.Errorf("Failed to construct WebSocket with valid URL: %v", err)
+	for _, tc := range tests {
+		RunTest(t, tc)
 	}
 }
 
 func TestWebSocketConnection(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(echoServer))
-	defer server.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	vm := goja.New()
-	el := global.NewEventLoop(vm)
-	vm.Set("setTimeout", el.SetTimeout)
-	vm.Set("clearTimeout", el.ClearTimeout)
-	vm.Set("eventLoop", el)
-	vm.Set("testDone", func() { cancel() })
-	go el.Start()
-	defer el.Stop()
-
-	module := vm.NewObject()
-	exports := vm.NewObject()
-	module.Set("exports", exports)
-	Module(vm, module)
-
-	vm.Set("exports", exports)
-	vm.Set("testURL", wsURL)
-
-	_, err := el.RunString(`
-		const WS = exports.WebSocket;
-		const ws = new WS(testURL);
-		var open = false;
-		ws.addEventListener("open", function(){ open = true; });
-		ws.addEventListener("open", function(){ testDone(); });
-	`)
-	if err != nil {
-		t.Fatalf("Failed to setup WebSocket: %v", err)
+	tests := []TestCase{
+		{
+			name: "connect",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket(runtime.env.get("testURL"));
+				ws.on("error", function(err){
+					console.log("websocket error: " + err);
+				});
+				ws.on("open", function(){
+					console.log("websocket open");
+					setTimeout(()=>{ ws.close() }, 500);
+				});
+				ws.on("close", function(){ 
+					console.log("websocket closed");
+				});
+			`,
+			output: []string{
+				"INFO  websocket open",
+				"INFO  websocket closed",
+			},
+		},
+		{
+			name: "close",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket(runtime.env.get("testURL"));
+				ws.on("open", function() {
+					ws.close();
+				});
+				ws.on("close", ()=>{ console.println("websocket closed"); });
+			`,
+			output: []string{
+				"websocket closed",
+			},
+		},
+		{
+			name: "send_receive",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket(runtime.env.get("testURL"));
+				ws.on("error", function(err){
+					console.log("websocket error: " + err);
+				});
+				ws.on("close", function(evt){
+					console.log("websocket closed");
+				});
+				ws.on("open", function() {
+					console.log("websocket open");
+					for (let i = 0; i < 3; i++) {
+						ws.send("test message "+i);
+					}
+				});
+				ws.on("message", (evt) => {
+					console.println(evt.data);
+				});
+				setTimeout(function(){ ws.close(); }, 100);	
+			`,
+			output: []string{
+				"INFO  websocket open",
+				"test message 0",
+				"test message 1",
+				"test message 2",
+				"INFO  websocket closed",
+			},
+		},
+		{
+			name: "multiple_event_listeners",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket(runtime.env.get("testURL"));
+				const onMessage = function(m) {
+					console.println("got: "+m.data);
+				}
+				ws.on("message", onMessage);
+				ws.addEventListener("message", onMessage);
+				ws.on("open", function() {
+					ws.send("trigger message");
+					setTimeout(function() { ws.close(); }, 500);
+				});
+				ws.on("close", () => { console.println("websocket closed"); });
+			`,
+			output: []string{
+				"got: trigger message",
+				"got: trigger message",
+				"websocket closed",
+			},
+		},
 	}
 
-	<-ctx.Done()
-
-	if ok := vm.Get("open").Export().(bool); !ok {
-		t.Error("WebSocket did not open successfully")
-	}
-}
-
-func TestWebSocketSendReceive(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(echoServer))
 	defer server.Close()
-
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	vm := goja.New()
-	el := global.NewEventLoop(vm)
-	vm.Set("setTimeout", el.SetTimeout)
-	vm.Set("clearTimeout", el.ClearTimeout)
-	vm.Set("eventLoop", el)
-	vm.Set("testDone", func() { cancel() })
-	go el.Start()
-	defer el.Stop()
-
-	module := vm.NewObject()
-	exports := vm.NewObject()
-	module.Set("exports", exports)
-	Module(vm, module)
-
-	vm.Set("exports", exports)
-	vm.Set("testURL", wsURL)
-
-	received := make(chan string, 1)
-	vm.Set("onMessage", func(data goja.Value) {
-		obj := data.ToObject(vm)
-		switch obj.Get("type").Export().(int64) {
-		case websocket.TextMessage:
-			// handle text message
-			if msgData := obj.Get("data"); msgData != nil {
-				received <- msgData.Export().(string)
-			}
-		case websocket.BinaryMessage:
-			// handle binary message
-			if msgData := obj.Get("data"); msgData != nil {
-				received <- string(msgData.Export().([]byte))
-			}
-		default:
-			// ignore other message types
+	for _, tc := range tests {
+		tc.vars = map[string]any{
+			"testURL": wsURL,
 		}
-	})
-
-	_, err := el.RunString(`
-		const ws = new exports.WebSocket(testURL);
-		ws.on("open", function() {
-			ws.send("test message");
-		});
-		ws.on("message", (evt) => {
-			onMessage(evt);
-		});
-	`)
-	if err != nil {
-		t.Fatalf("Failed to setup WebSocket: %v", err)
-	}
-
-	select {
-	case msg := <-received:
-		if msg != "test message" {
-			t.Errorf("Expected 'test message', got '%s'", msg)
-		}
-	case <-ctx.Done():
-		t.Fatal("Timeout waiting for echo message")
-	}
-}
-
-func TestWebSocketClose(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(echoServer))
-	defer server.Close()
-
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	vm := goja.New()
-	el := global.NewEventLoop(vm)
-	vm.Set("setTimeout", el.SetTimeout)
-	vm.Set("clearTimeout", el.ClearTimeout)
-	vm.Set("eventLoop", el)
-	vm.Set("testDone", func() { cancel() })
-	go el.Start()
-	defer el.Stop()
-
-	module := vm.NewObject()
-	exports := vm.NewObject()
-	module.Set("exports", exports)
-	Module(vm, module)
-
-	vm.Set("exports", exports)
-	vm.Set("testURL", wsURL)
-
-	closed := make(chan bool, 1)
-	vm.Set("onClose", func() {
-		closed <- true
-	})
-
-	_, err := el.RunString(`
-		const WS = exports.WebSocket;
-		const ws = new WS(testURL);
-		ws.on("open", function() {
-			ws.close();
-		});
-		ws.on("close", onClose);
-	`)
-	if err != nil {
-		t.Fatalf("Failed to setup WebSocket: %v", err)
-	}
-
-	select {
-	case <-closed:
-		// closed successfully
-	case <-ctx.Done():
-		t.Fatal("Timeout waiting for WebSocket to close")
-	}
-}
-
-func TestWebSocketMultipleEventListeners(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(broadcastServer))
-	defer server.Close()
-
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	vm := goja.New()
-	el := global.NewEventLoop(vm)
-	vm.Set("setTimeout", el.SetTimeout)
-	vm.Set("clearTimeout", el.ClearTimeout)
-	vm.Set("eventLoop", el)
-	vm.Set("testDone", func() { cancel() })
-	go el.Start()
-	defer el.Stop()
-
-	module := vm.NewObject()
-	exports := vm.NewObject()
-	module.Set("exports", exports)
-	Module(vm, module)
-
-	vm.Set("exports", exports)
-	vm.Set("testURL", wsURL)
-
-	var counter atomic.Int32
-	vm.Set("incrementCounter", func() {
-		counter.Add(1)
-	})
-
-	_, err := el.RunString(`
-		const WS = exports.WebSocket;
-		const ws = new WS(testURL);
-		ws.addEventListener("message", incrementCounter);
-		ws.addEventListener("message", incrementCounter);
-	`)
-	if err != nil {
-		t.Fatalf("Failed to setup WebSocket: %v", err)
-	}
-	<-ctx.Done()
-
-	if count := counter.Load(); count != 2 {
-		t.Errorf("Expected counter to be 2, got %d", count)
+		RunTest(t, tc)
 	}
 }
 
 func TestWebSocketInvalidEventType(t *testing.T) {
-	rt := goja.New()
-	module := rt.NewObject()
-	exports := rt.NewObject()
-	module.Set("exports", exports)
-	Module(rt, module)
-
-	rt.Set("exports", exports)
-
-	errorCaught := false
-	rt.Set("checkError", func(val goja.Value) {
-		if val != goja.Undefined() {
-			errorCaught = true
-		}
-	})
-
-	_, err := rt.RunString(`
-		const ws = new exports.WebSocket("ws://localhost:8080");
-		const result = ws.on("invalid_event", function() {});
-		checkError(result);
-	`)
-	if err != nil {
-		// JavaScript error thrown
-		return
+	tests := []TestCase{
+		{
+			name: "invalid_event_type",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket(runtime.env.get("testURL"));
+				try {
+					ws.on("invalid_event", function() {});
+					console.println("undefined returned as expected");
+				} finally {
+					ws.close(); 
+				}
+			`,
+			err: `"invalid_event" is not supported event type`,
+		},
 	}
-	if !errorCaught {
-		t.Error("Expected error when adding listener for invalid event type")
+
+	server := httptest.NewServer(http.HandlerFunc(echoServer))
+	defer server.Close()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	for _, tc := range tests {
+		tc.vars = map[string]any{
+			"testURL": wsURL,
+		}
+		RunTest(t, tc)
 	}
 }
 
 func TestWebSocketConnectionError(t *testing.T) {
-	rt := goja.New()
-
-	module := rt.NewObject()
-	exports := rt.NewObject()
-	module.Set("exports", exports)
-	Module(rt, module)
-
-	rt.Set("exports", exports)
-
-	el := global.NewEventLoop(rt)
-	rt.Set("setTimeout", el.SetTimeout)
-	rt.Set("clearTimeout", el.ClearTimeout)
-	rt.Set("eventLoop", el)
-
-	errorReceived := make(chan bool, 1)
-	rt.Set("onError", func() {
-		errorReceived <- true
-	})
-
-	// Try to connect to a non-existent server
-	_, err := rt.RunString(`
-		const WS = exports.WebSocket;
-		const ws = new WS("ws://localhost:9999");
-		ws.on("error", onError);
-	`)
-	if err != nil {
-		t.Fatalf("Failed to setup WebSocket: %v", err)
+	tests := []TestCase{
+		{
+			name: "connection_error",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket("ws://127.0.0.1:9999");
+				ws.on("error", function(err){
+					console.println("websocket error: " + err);
+				});
+			`,
+			output: []string{
+				"websocket error: dial tcp 127.0.0.1:9999: connect: connection refused",
+			},
+		},
+		{
+			name: "send_without_connection",
+			script: `
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket("ws://127.0.0.1:9999");
+				setTimeout(function() {
+					try {
+						ws.send("test message");
+					} catch(e) {
+						console.println("send error: " + e);
+					}
+				}, 500);
+			`,
+			output: []string{
+				"send error: GoError: websocket connection is closed",
+			},
+		},
 	}
 
-	// Start event loop
-	go el.Start()
-	defer el.Stop()
-
-	select {
-	case <-errorReceived:
-		// Error received as expected
-	case <-time.After(2 * time.Second):
-		t.Fatal("Timeout waiting for connection error")
-	}
-}
-
-func TestWebSocketSendWithoutConnection(t *testing.T) {
-	rt := goja.New()
-	ws := &WebSocket{
-		rt:   rt,
-		addr: "ws://localhost:8080",
-		conn: nil,
-	}
-
-	// Send should fail with nil connection
-	err := ws.Send("test")
-	if err == nil {
-		t.Error("Expected error when sending without connection")
-	}
-}
-
-func TestErrorOrUndefined(t *testing.T) {
-	result := ErrorOrUndefined(nil)
-	if !goja.IsUndefined(result) {
-		t.Error("Expected undefined for nil error")
-	}
-
-	result = ErrorOrUndefined(http.ErrServerClosed)
-	if goja.IsUndefined(result) {
-		t.Error("Expected error value for non-nil error")
+	for _, tc := range tests {
+		RunTest(t, tc)
 	}
 }

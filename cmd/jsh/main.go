@@ -1,11 +1,69 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 
 	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/native/readline"
+	"github.com/OutOfBedlam/jsh/native/shell"
+	"github.com/OutOfBedlam/jsh/native/ws"
+	"github.com/dop251/goja_nodejs/require"
 )
 
+// JSH options:
+//  1. -c "script" : command to execute
+//     ex: jsh -c "console.print(`hello ${runtime.args[0]}`?)" -- world
+//  2. script file : execute script file
+//     ex: jsh script.js -- arg1 arg2
+//  3. no args : start interactive shell
+//     ex: jsh
 func main() {
-	os.Exit(jsh.Main())
+	src := flag.String("c", "", "command to execute")
+	dir := flag.String("d", ".", "working directory")
+	scf := flag.String("s", "", "configured file to start from")
+	dev := flag.String("dev", "", "use development filesystem")
+	flag.Parse()
+
+	// split args and passthrough args at "--"
+	args, passthrough := argAndPassthrough(flag.Args())
+
+	conf := jsh.Config{}
+	if *scf != "" {
+		// when it starts with "-s", read secret box
+		if err := jsh.ReadSecretBox(*scf, &conf); err != nil {
+			fmt.Println("Error reading secret file:", err.Error())
+			os.Exit(1)
+		}
+	} else {
+		// otherwise, use command args to build ExecPass
+		conf.Code = *src
+		conf.Dir = *dir
+		conf.Dev = *dev
+		if len(args) > 0 {
+			conf.Args = append([]string{args[0]}, passthrough...)
+		}
+	}
+	conf.ExtNativeModules = map[string]require.ModuleLoader{
+		"ws":         ws.Module,
+		"readline":   readline.Module,
+		"@jsh/shell": shell.Module,
+	}
+	os.Exit(jsh.Run(conf))
+}
+
+// argAndPassthrough splits args into those before "--" and those after.
+func argAndPassthrough(args []string) (remains []string, passthrough []string) {
+	for i, arg := range args {
+		if arg == "--" {
+			if i+1 < len(args) {
+				passthrough = args[i+1:]
+			}
+			remains = args[:i]
+			return
+		}
+	}
+	remains = args
+	return
 }

@@ -1,0 +1,200 @@
+package readline
+
+import (
+	"io/fs"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/OutOfBedlam/jsh"
+	"github.com/dop251/goja_nodejs/require"
+	"github.com/nyaosorg/go-readline-ny/keys"
+)
+
+type TestCase struct {
+	name   string
+	script string
+	input  []string
+	output []string
+	err    string
+	vars   map[string]any
+}
+
+func RunTest(t *testing.T, tc TestCase) {
+	t.Helper()
+	t.Run(tc.name, func(t *testing.T) {
+		t.Helper()
+		env := &jsh.TestEnv{
+			// ExecBuilderFunc: testExecBuilder, // no exec
+			Mounts: map[string]fs.FS{"/work": os.DirFS("./test/")},
+			Natives: map[string]require.ModuleLoader{
+				"readline": Module,
+			},
+			Vars: tc.vars,
+		}
+		if len(tc.input) > 0 {
+			env.Input.WriteString(strings.Join(tc.input, ""))
+		}
+		jr := &jsh.JSRuntime{
+			Name:   tc.name,
+			Source: tc.script,
+			Env:    env,
+		}
+		if err := jr.Run(); err != nil {
+			if tc.err == "" || !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			return
+		}
+
+		gotOutput := env.Output.String()
+		lines := strings.Split(gotOutput, "\n")
+		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
+			t.Fatalf("Expected %d output lines, got %d\n%s", len(tc.output), len(lines)-1, gotOutput)
+		}
+		for i, expectedLine := range tc.output {
+			if lines[i] != expectedLine {
+				t.Errorf("Output line %d: expected %q, got %q", i, expectedLine, lines[i])
+			}
+		}
+	})
+}
+
+func TestReadLineModule(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "module",
+			script: `
+				const rl = require('readline');
+				console.println("MODULE:", typeof rl.ReadLine);
+			`,
+			output: []string{
+				"MODULE: function",
+			},
+		},
+		{
+			name: "constructor-no-args",
+			script: `
+				const {ReadLine} = require('readline');
+				const r = new ReadLine();
+				console.printf("RL: %X\n", ReadLine.CtrlJ);
+			`,
+			output: []string{
+				"RL: 0A",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestReadLine(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "readline-simple",
+			script: `
+			try{
+				const {ReadLine} = require('readline');
+				const r = new ReadLine({
+					prompt: (lineno) => { return "prompt> "},
+					auto_input: runtime.env.get("auto_input"),
+				});
+				console.println("PS:", r.options.prompt(0));
+				const line = r.readLine();
+				if (line instanceof Error) {
+					throw line;
+				}
+				console.println("OK:", line);
+			} catch(e) {
+				console.println("ERR:", e.message);
+			}
+			`,
+			vars: map[string]any{
+				"auto_input": []string{
+					"Hello World", keys.Enter,
+				},
+			},
+			output: []string{
+				"PS: prompt> ",
+				"OK: Hello World",
+			},
+		},
+	}
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestReadLineSubmitOnEnterWhen(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "readline-submit-on-enter-when",
+			script: `
+			try{
+				const {ReadLine} = require('readline');
+				const r = new ReadLine({
+					auto_input: runtime.env.get("auto_input"),
+					submitOnEnterWhen: (lines, idx) => {
+						return lines[idx].endsWith(";");
+					},
+				});
+				const line = r.readLine();
+				if (line instanceof Error) {
+					throw line;
+				}
+				console.println("OK:", line);
+			} catch(e) {
+				console.println("ERR:", e.message);
+			}
+			`,
+			vars: map[string]any{
+				"auto_input": []string{
+					"Submit by", keys.Enter,
+					"semi-colon;", keys.Enter,
+				},
+			},
+			output: []string{
+				"OK: Submit by",
+				"semi-colon;",
+			},
+		},
+	}
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestReadLineCancel(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "readline-cancel",
+			script: `
+			try{
+				const {ReadLine} = require('readline');
+				const r = new ReadLine({
+					auto_input: runtime.env.get("auto_input"),
+				});
+				const to = setTimeout(()=>{ r.close() }, 200);
+				const line = r.readLine();
+				console.println("OK:", line);
+				clearTimeout(to);
+		    } catch(e) {
+				console.println("ERR:", e.message);
+			}
+			`,
+			vars: map[string]any{
+				"auto_input": []string{
+					"Hello World", // <-- wait timeout with no Enter
+				},
+			},
+			output: []string{
+				"ERR: EOF",
+			},
+		},
+	}
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}

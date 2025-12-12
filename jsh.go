@@ -5,7 +5,6 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -13,48 +12,9 @@ import (
 	"path/filepath"
 
 	"github.com/OutOfBedlam/jsh/global"
-	"github.com/OutOfBedlam/jsh/native/shell"
-	"github.com/OutOfBedlam/jsh/native/ws"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
 )
-
-// JSH options:
-//  1. -c "script" : command to execute
-//     ex: jsh -c "console.print(`hello ${runtime.args[0]}`?)" -- world
-//  2. script file : execute script file
-//     ex: jsh script.js -- arg1 arg2
-//  3. no args : start interactive shell
-//     ex: jsh
-
-func Main() int {
-	src := flag.String("c", "", "command to execute")
-	dir := flag.String("d", ".", "working directory")
-	scf := flag.String("s", "", "configured file to start from")
-	dev := flag.String("dev", "", "use development filesystem")
-	flag.Parse()
-
-	// split args and passthrough args at "--"
-	args, passthrough := argAndPassthrough(flag.Args())
-
-	conf := Config{}
-	if *scf != "" {
-		// when it starts with "-s", read secret box
-		if err := ReadSecretBox(*scf, &conf); err != nil {
-			fmt.Println("Error reading secret file:", err.Error())
-			return 1
-		}
-	} else {
-		// otherwise, use command args to build ExecPass
-		conf.Code = *src
-		conf.Dir = *dir
-		conf.Dev = *dev
-		if len(args) > 0 {
-			conf.Args = append([]string{args[0]}, passthrough...)
-		}
-	}
-	return Run(conf)
-}
 
 func Run(conf Config) int {
 	fileSystem := NewFS()
@@ -72,8 +32,6 @@ func Run(conf Config) int {
 		WithReader(os.Stdin),
 		WithWriter(os.Stdout),
 		WithExecBuilder(execBuilder(conf.Dir, conf.Dev)),
-		WithNativeModule("@jsh/shell", shell.Module),
-		WithNativeModule("@jsh/ws", ws.Module),
 	}
 	for n, m := range conf.ExtNativeModules {
 		opts = append(opts, WithNativeModule(n, m))

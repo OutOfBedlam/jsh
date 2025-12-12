@@ -1,111 +1,80 @@
 package ws
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"sync"
+	"time"
 
 	"github.com/OutOfBedlam/jsh/global"
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/gorilla/websocket"
 )
 
-func Module(rt *goja.Runtime, module *goja.Object) {
-	o := module.Get("exports").(*goja.Object)
+//go:embed ws.js
+var wsJS string
 
-	o.Set("WebSocket", newWebSocket(rt))
+func Module(rt *goja.Runtime, module *goja.Object) {
+	// Export native functions to embedded JS module
+	module.Set("NewWebSocket", NewNativeWebSocket(rt))
+
+	// Run the embedded JS module code
+	rt.Set("module", module)
+	_, err := rt.RunString(fmt.Sprintf(`(()=>{%s})()`, wsJS))
+	if err != nil {
+		panic(err)
+	}
 }
 
-func newWebSocket(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
-	return func(call goja.ConstructorCall) *goja.Object {
-		if len(call.Arguments) < 1 {
-			panic(rt.NewTypeError("WebSocket constructor requires at least 1 argument"))
+func NewNativeWebSocket(vm *goja.Runtime) func(obj *goja.Object) *WebSocket {
+	loop := vm.Get("eventloop").Export().(*eventloop.EventLoop)
+	return func(obj *goja.Object) *WebSocket {
+		return &WebSocket{
+			obj:  obj,
+			loop: loop,
+			addr: obj.Get("url").String(),
 		}
-		var addr = call.Argument(0).String()
-		var options *goja.Object
-		if len(call.Arguments) >= 2 {
-			options = call.Argument(1).ToObject(rt)
-		}
-		ws := &WebSocket{
-			rt:      rt,
-			obj:     rt.NewObject(),
-			addr:    addr,
-			options: options,
-		}
-		ws.obj.Set("close", ws.Close)
-		ws.obj.Set("send", ws.send)
-
-		if el := global.GetEventLoop(rt); el != nil {
-			el.Register(ws.obj, ws.Open, ws.Close, []string{
-				"open", "close", "message", "error",
-			})
-		}
-
-		return ws.obj
 	}
 }
 
 type WebSocket struct {
-	rt      *goja.Runtime
-	obj     *goja.Object
-	addr    string
-	options *goja.Object
-	conn    *websocket.Conn
-	mu      sync.RWMutex
+	obj  *goja.Object
+	loop *eventloop.EventLoop
+
+	addr   string
+	mu     sync.RWMutex
+	conn   *websocket.Conn
+	closed bool
+	vital  *eventloop.Interval
 }
 
-func ErrorOrUndefined(err error) goja.Value {
-	if err != nil {
-		return goja.New().NewGoError(err)
-	}
-	return goja.Undefined()
-}
-
-func (ws *WebSocket) Send(data string) error {
-	ws.mu.RLock()
-	conn := ws.conn
-	ws.mu.RUnlock()
-	if conn == nil {
-		return errors.New("websocket connection is closed")
-	}
-	return conn.WriteMessage(websocket.TextMessage, []byte(data))
-}
-
-func (ws *WebSocket) send(call goja.FunctionCall) goja.Value {
-	if len(call.Arguments) < 1 {
-		return goja.Undefined()
-	}
-	var data string
-	switch v := call.Argument(0).Export().(type) {
-	case string:
-		data = v
-	case []byte:
-		data = string(v)
-	default:
-		data = fmt.Sprintf("%v", v)
-	}
-	return ErrorOrUndefined(ws.Send(data))
-}
-
-func (ws *WebSocket) fireEvent(eventType string, args ...goja.Value) {
-	if el := global.GetEventLoop(ws.rt); el != nil {
-		el.DispatchEvent(ws.obj, eventType, args...)
-		return
-	}
+func (ws *WebSocket) emit(eventType string, args ...any) {
+	global.Emit(ws.loop, ws.obj, eventType, args...)
 }
 
 func (ws *WebSocket) Open() {
+	ws.vital = ws.loop.SetInterval(func(r *goja.Runtime) {
+		if ws.closed {
+			ws.loop.ClearInterval(ws.vital)
+		}
+	}, 500*time.Millisecond)
+
+	go ws.run()
+}
+
+func (ws *WebSocket) run() {
+	defer ws.loop.ClearInterval(ws.vital)
 	if s, _, err := websocket.DefaultDialer.Dial(ws.addr, nil); err != nil {
-		log.Printf("WebSocket connection error: %v", err)
-		ws.fireEvent("error", ws.rt.NewGoError(err))
+		ws.closed = true
+		ws.emit("error", err)
 		return
 	} else {
 		ws.mu.Lock()
 		ws.conn = s
 		ws.mu.Unlock()
-		ws.fireEvent("open", goja.Undefined())
+		ws.emit("open")
 	}
 
 	for {
@@ -114,13 +83,16 @@ func (ws *WebSocket) Open() {
 		ws.mu.RUnlock()
 
 		if conn == nil {
+			ws.emit("connection error: nil conn")
 			return
 		}
 
 		typ, message, err := conn.ReadMessage()
 		if err != nil {
-			if err != io.EOF {
-				ws.fireEvent("close", ws.rt.ToValue(err.Error()))
+			if ws.closed || !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				ws.emit("close", err)
+			} else {
+				ws.emit("error", err)
 			}
 			return
 		}
@@ -131,7 +103,7 @@ func (ws *WebSocket) Open() {
 			data["data"] = message
 		}
 		data["type"] = typ
-		ws.fireEvent("message", ws.rt.ToValue(data))
+		ws.emit("message", data)
 	}
 }
 
@@ -139,8 +111,19 @@ func (ws *WebSocket) Close() {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 
+	ws.closed = true
 	if ws.conn != nil {
 		ws.conn.Close()
 		ws.conn = nil
 	}
+}
+
+func (ws *WebSocket) Send(data string) error {
+	ws.mu.RLock()
+	conn := ws.conn
+	ws.mu.RUnlock()
+	if conn == nil {
+		return errors.New("websocket connection is closed")
+	}
+	return conn.WriteMessage(websocket.TextMessage, []byte(data))
 }

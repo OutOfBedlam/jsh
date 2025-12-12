@@ -1,9 +1,7 @@
 package jsh
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -14,44 +12,6 @@ import (
 	"github.com/OutOfBedlam/jsh/global"
 )
 
-type TestEnv struct {
-	input       bytes.Buffer
-	output      bytes.Buffer
-	execBuilder global.ExecBuilderFunc
-}
-
-var _ global.Env = (*TestEnv)(nil)
-
-func (te *TestEnv) Reader() io.Reader {
-	return &te.input
-}
-
-func (te *TestEnv) Writer() io.Writer {
-	return &te.output
-}
-
-func (te *TestEnv) Filesystem() fs.FS {
-	fileSystem := NewFS()
-	fileSystem.Mount("/work", os.DirFS("./test/"))
-	return fileSystem
-}
-
-func (te *TestEnv) ExecBuilder() global.ExecBuilderFunc {
-	return testExecBuilder
-}
-
-func (te *TestEnv) Set(key string, value any) {
-	// No-op for test env
-}
-
-func (te *TestEnv) Get(key string) any {
-	switch key {
-	case "PATH":
-		return "/:/sbin:/work"
-	}
-	return nil
-}
-
 type TestCase struct {
 	name     string
 	script   string
@@ -61,11 +21,15 @@ type TestCase struct {
 	postTest func(*JSRuntime)
 }
 
-func runTest(t *testing.T, tc TestCase) {
+func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
-		env := &TestEnv{}
-		env.input.WriteString(strings.Join(tc.input, "\n") + "\n")
+		t.Helper()
+		env := &TestEnv{
+			ExecBuilderFunc: testExecBuilder,
+			Mounts:          map[string]fs.FS{"/work": os.DirFS("./test/")},
+		}
+		env.Input.WriteString(strings.Join(tc.input, "\n") + "\n")
 
 		jr := &JSRuntime{
 			Name:   tc.name,
@@ -82,7 +46,7 @@ func runTest(t *testing.T, tc TestCase) {
 			tc.postTest(jr)
 		}
 
-		gotOutput := env.output.String()
+		gotOutput := env.Output.String()
 		lines := strings.Split(gotOutput, "\n")
 		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
 			t.Fatalf("Expected %d output lines, got %d\n%s", len(tc.output), len(lines)-1, gotOutput)
@@ -177,6 +141,15 @@ func TestJsh(t *testing.T) {
 				"Package help",
 			},
 		},
+	}
+
+	for _, tc := range ts {
+		RunTest(t, tc)
+	}
+}
+
+func TestExec(t *testing.T) {
+	tests := []TestCase{
 		{
 			name: "runtime_exec",
 			script: `
@@ -214,8 +187,105 @@ func TestJsh(t *testing.T) {
 			},
 		},
 	}
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
 
-	for _, tc := range ts {
-		runTest(t, tc)
+func TestSetTimeout(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "setTimeout_basic",
+			script: `
+			let t = now();
+			setTimeout(() => {
+					console.log("Timeout executed");
+					testDone();
+				}, 100);
+			`,
+			output: []string{
+				"INFO  Timeout executed",
+			},
+		},
+		{
+			name: "setTimeout_args",
+			script: `
+				var arg1, arg2;
+				setTimeout((a, b) => {
+					console.println("Timeout with args:", a, b);
+					arg1 = a;
+					arg2 = b;
+					testDone();
+				}, 50,  "test", 42);
+			`,
+			output: []string{
+				"Timeout with args: test 42",
+			},
+		},
+		{
+			name: "clearTimeout_basic",
+			script: `
+				var counter = 0;
+				var sum = 0;
+
+				function add(a) {
+					counter++;
+					sum += a;
+					tm = setTimeout(add, 50, a+1);
+					if(counter >= 3) {
+						clearTimeout(tm);
+						setTimeout(()=>{testDone();}, 100);
+					}
+				}
+				var tm = setTimeout(add, 50, 1);
+				runtime.addShutdownHook(() => {
+					console.println("Final count:", counter,", sum:", sum);
+				});
+			`,
+			output: []string{
+				"Final count: 3 , sum: 6",
+			},
+		},
+		{
+			name: "clearTimeout_twice",
+			script: `
+				var executed = false;
+				var tm = setTimeout(()=>{ executed = true; testDone(); }, 50);
+				clearTimeout(tm);
+				clearTimeout(tm);
+				setTimeout(()=>{ testDone(); }, 50); // Ensure test completes
+				`,
+			output: []string{
+				// No output expected regarding execution
+			},
+		},
+	}
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestEvents(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "event_emitter_basic",
+			script: `
+				const emitter = new EventEmitter();
+
+				emitter.on("greet", function(name) {
+					console.println("Hello, " + name + "!");
+				});
+
+				emitter.emit("greet", "Alice");
+				emitter.emit("greet", "Bob");
+			`,
+			output: []string{
+				"Hello, Alice!",
+				"Hello, Bob!",
+			},
+		},
+	}
+	for _, tc := range tests {
+		RunTest(t, tc)
 	}
 }

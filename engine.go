@@ -1,119 +1,19 @@
 package jsh
 
 import (
+	_ "embed"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
+	"runtime/debug"
 	"slices"
 	"time"
 
 	"github.com/OutOfBedlam/jsh/global"
 	"github.com/OutOfBedlam/jsh/log"
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 )
-
-type DefaultEnv struct {
-	writer      io.Writer
-	reader      io.Reader
-	fs          fs.FS
-	execBuilder global.ExecBuilderFunc
-	vars        map[string]any
-	natives     map[string]require.ModuleLoader
-}
-
-var _ global.Env = (*DefaultEnv)(nil)
-var _ global.EnvFS = (*DefaultEnv)(nil)
-var _ global.EnvExec = (*DefaultEnv)(nil)
-var _ global.EnvNativeModule = (*DefaultEnv)(nil)
-
-func NewEnv(opts ...EnvOption) global.Env {
-	ret := &DefaultEnv{}
-	for _, opt := range opts {
-		opt(ret)
-	}
-	return ret
-}
-
-type EnvOption func(*DefaultEnv)
-
-func WithFilesystem(fs fs.FS) EnvOption {
-	return func(de *DefaultEnv) {
-		de.fs = fs
-	}
-}
-
-func WithWriter(w io.Writer) EnvOption {
-	return func(de *DefaultEnv) {
-		de.writer = w
-	}
-}
-
-func WithReader(r io.Reader) EnvOption {
-	return func(de *DefaultEnv) {
-		de.reader = r
-	}
-}
-
-func WithExecBuilder(eb global.ExecBuilderFunc) EnvOption {
-	return func(de *DefaultEnv) {
-		de.execBuilder = eb
-	}
-}
-
-func WithNativeModule(name string, loader require.ModuleLoader) EnvOption {
-	return func(de *DefaultEnv) {
-		if de.natives == nil {
-			de.natives = make(map[string]require.ModuleLoader)
-		}
-		de.natives[name] = loader
-	}
-}
-
-func (de *DefaultEnv) Reader() io.Reader {
-	if de.reader != nil {
-		return de.reader
-	}
-	return os.Stdin
-}
-
-func (de *DefaultEnv) Writer() io.Writer {
-	if de.writer != nil {
-		return de.writer
-	}
-	return os.Stdout
-}
-
-func (de *DefaultEnv) Filesystem() fs.FS {
-	return de.fs
-}
-
-func (de *DefaultEnv) ExecBuilder() global.ExecBuilderFunc {
-	return de.execBuilder
-}
-
-func (de *DefaultEnv) Set(key string, value any) {
-	if de.vars == nil {
-		de.vars = make(map[string]any)
-	}
-	if value == nil {
-		delete(de.vars, key)
-		return
-	}
-	de.vars[key] = value
-}
-
-func (de *DefaultEnv) Get(key string) any {
-	if de.vars == nil {
-		return nil
-	}
-	return de.vars[key]
-}
-
-func (de *DefaultEnv) NativeModules() map[string]require.ModuleLoader {
-	return de.natives
-}
 
 type JSRuntime struct {
 	Name   string
@@ -122,7 +22,6 @@ type JSRuntime struct {
 	Strict bool
 	Env    global.Env
 
-	vm            *goja.Runtime
 	exitCode      int
 	shutdownHooks []func()
 	nowFunc       func() time.Time
@@ -133,8 +32,15 @@ func (jr *JSRuntime) Run() error {
 		jr.Env = &DefaultEnv{}
 	}
 
-	jr.vm = goja.New()
-	jr.vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+	defer func() {
+		if r := recover(); r != nil {
+			if ie, ok := r.(*goja.InterruptedError); ok {
+				fmt.Fprintf(jr.Env.Writer(), "interrupted: %v\n", ie.Value())
+			}
+			fmt.Fprintf(os.Stderr, "panic: %v\n%v\n", r, string(debug.Stack()))
+			os.Exit(1)
+		}
+	}()
 
 	registry := require.NewRegistry(
 		require.WithGlobalFolders("node_modules"),
@@ -145,26 +51,11 @@ func (jr *JSRuntime) Run() error {
 			registry.RegisterNativeModule(name, loader)
 		}
 	}
-	registry.Enable(jr.vm)
 
-	jr.vm.Set("console", log.SetConsole(jr.vm, jr.Env.Writer()))
-	jr.vm.Set("now", jr.doNow)
-
-	eventLoop := global.NewEventLoop(jr.vm)
-	jr.vm.Set("eventLoop", eventLoop)
-	jr.vm.Set("setTimeout", eventLoop.SetTimeout)
-	jr.vm.Set("clearTimeout", eventLoop.ClearTimeout)
-	go eventLoop.Start()
-	defer eventLoop.Stop()
-
-	obj := jr.vm.NewObject()
-	jr.vm.Set("runtime", obj)
-	obj.Set("addShutdownHook", jr.doAddShutdownHook)
-	obj.Set("exit", jr.doExit)
-	obj.Set("env", jr.Env)
-	obj.Set("args", jr.doArgs())
-	obj.Set("exec", jr.doExec)
-	obj.Set("execString", jr.doExecString)
+	loop := global.NewEventLoop(
+		eventloop.EnableConsole(false),
+		eventloop.WithRegistry(registry),
+	)
 
 	// guarantee shutdown hooks run at the end
 	defer func() {
@@ -178,12 +69,32 @@ func (jr *JSRuntime) Run() error {
 	if err != nil {
 		return err
 	}
+	var retErr error = nil
+	loop.Run(func(vm *goja.Runtime) {
+		vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+		vm.Set("console", log.SetConsole(vm, jr.Env.Writer()))
+		vm.Set("eventloop", loop)
+		if jr.nowFunc == nil {
+			vm.Set("now", time.Now)
+		} else {
+			vm.Set("now", jr.nowFunc)
+		}
 
-	if _, err := eventLoop.RunProgram(program); err != nil {
-		jr.exitCode = -1
-		return err
-	}
-	return nil
+		obj := vm.NewObject()
+		vm.Set("runtime", obj)
+		obj.Set("env", jr.Env)
+		obj.Set("args", jr.Args)
+		obj.Set("addShutdownHook", jr.doAddShutdownHook)
+		obj.Set("exit", doExit(vm))
+		obj.Set("exec", doExec(vm, jr.exec))
+		obj.Set("execString", doExecString(vm, jr.exec))
+
+		if _, err := vm.RunProgram(program); err != nil {
+			retErr = err
+			jr.exitCode = -1
+		}
+	})
+	return retErr
 }
 
 func (jr *JSRuntime) ExitCode() int {
@@ -202,74 +113,63 @@ type Exit struct {
 	Code int
 }
 
-func (jr *JSRuntime) doExit(call goja.FunctionCall) goja.Value {
-	exit := Exit{Code: 0}
-	if len(call.Arguments) > 0 {
-		exit.Code = int(call.Argument(0).ToInteger())
+func doExit(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		exit := Exit{Code: 0}
+		if len(call.Arguments) > 0 {
+			exit.Code = int(call.Argument(0).ToInteger())
+		}
+		vm.Interrupt(exit)
+		return goja.Undefined()
 	}
-	jr.vm.Interrupt(exit)
-	return goja.Undefined()
-}
-
-func (jr *JSRuntime) doNow() goja.Value {
-	now := jr.nowFunc
-	if now == nil {
-		now = time.Now
-	}
-	return jr.vm.ToValue(now())
-}
-
-func (jr *JSRuntime) doArgs() goja.Value {
-	s := make([]any, len(jr.Args))
-	for i, arg := range jr.Args {
-		s[i] = arg
-	}
-	return jr.vm.NewArray(s...)
 }
 
 // doExecString executes a command line string via the exec function.
 //
 // syntax) execString(source: string, ...args: string): number
 // return) exit code
-func (jr *JSRuntime) doExecString(call goja.FunctionCall) goja.Value {
-	if len(call.Arguments) < 1 {
-		return jr.vm.NewGoError(fmt.Errorf("no source code provided"))
+func doExecString(vm *goja.Runtime, exec func(vm *goja.Runtime, source string, args []string) goja.Value) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return vm.NewGoError(fmt.Errorf("no source code provided"))
+		}
+		args := make([]string, 0, len(call.Arguments))
+		for _, a := range call.Arguments {
+			args = append(args, a.String())
+		}
+		return exec(vm, args[0], args[1:])
 	}
-	args := []string{call.Arguments[0].String()}
-	for i := 1; i < len(call.Arguments); i++ {
-		args = append(args, call.Arguments[i].String())
-	}
-	return jr.exec(args[0], args[1:])
 }
 
 // doExec executes a command by building an exec.Cmd and running it.
 //
 // syntax) exec(command: string, ...args: string): number
 // return) exit code
-func (jr *JSRuntime) doExec(call goja.FunctionCall) goja.Value {
-	if len(call.Arguments) < 1 {
-		return jr.vm.NewGoError(fmt.Errorf("no command provided"))
+func doExec(vm *goja.Runtime, exec func(vm *goja.Runtime, source string, args []string) goja.Value) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return vm.NewGoError(fmt.Errorf("no command provided"))
+		}
+		args := make([]string, 0, len(call.Arguments))
+		for _, a := range call.Arguments {
+			args = append(args, a.String())
+		}
+		return exec(vm, "", args)
 	}
-	args := []string{call.Arguments[0].String()}
-	for i := 1; i < len(call.Arguments); i++ {
-		args = append(args, call.Arguments[i].String())
-	}
-	return jr.exec("", args)
 }
 
-func (jr *JSRuntime) exec(source string, args []string) goja.Value {
+func (jr *JSRuntime) exec(vm *goja.Runtime, source string, args []string) goja.Value {
 	env, ok := jr.Env.(global.EnvExec)
 	if !ok {
-		return jr.vm.NewGoError(fmt.Errorf("environment does not support exec"))
+		return vm.NewGoError(fmt.Errorf("environment does not support exec"))
 	}
 	eb := env.ExecBuilder()
 	if eb == nil {
-		return jr.vm.NewGoError(fmt.Errorf("no command builder defined"))
+		return vm.NewGoError(fmt.Errorf("no command builder defined"))
 	}
 	cmd, err := eb(source, args)
 	if err != nil {
-		return jr.vm.NewGoError(err)
+		return vm.NewGoError(err)
 	}
-
-	return jr.exec0(cmd)
+	return jr.exec0(vm, cmd)
 }

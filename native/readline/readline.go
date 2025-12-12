@@ -2,70 +2,104 @@ package readline
 
 import (
 	"context"
+	_ "embed"
+	"fmt"
 	"io"
 	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/hymkor/go-multiline-ny"
+	"github.com/nyaosorg/go-ttyadapter/auto"
 )
 
+//go:embed readline.js
+var readlineJS string
+
 func Module(rt *goja.Runtime, module *goja.Object) {
-	o := module.Get("exports").(*goja.Object)
+	// Export native functions to embedded JS module
+	module.Set("NewReadLine", NewReadLine(rt))
 
-	o.Set("Reader", newReader(rt))
-}
-
-func newReader(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
-	return func(call goja.ConstructorCall) *goja.Object {
-		conf := DefaultConfig()
-		if len(call.Arguments) > 0 {
-			if err := rt.ExportTo(call.Arguments[0], conf); err != nil {
-				panic(rt.NewGoError(err))
-			}
-		}
-		reader := &Reader{
-			rt:   rt,
-			obj:  rt.NewObject(),
-			conf: conf,
-		}
-		reader.obj.Set("readLine", reader.ReadLine)
-		return reader.obj
+	// Run the embedded JS module code
+	rt.Set("module", module)
+	_, err := rt.RunString(fmt.Sprintf(`(()=>{%s})()`, readlineJS))
+	if err != nil {
+		panic(err)
 	}
 }
 
-type Config struct {
-	Prompt string `json:"prompt"`
-}
-
-func DefaultConfig() *Config {
-	return &Config{
-		Prompt: "> ",
+func NewReadLine(vm *goja.Runtime) func(obj *goja.Object, opt *goja.Object) *Reader {
+	return func(obj *goja.Object, opt *goja.Object) *Reader {
+		reader := &Reader{
+			vm: vm,
+			ed: &multiline.Editor{},
+		}
+		return reader
 	}
 }
 
 type Reader struct {
-	rt   *goja.Runtime
-	obj  *goja.Object
-	conf *Config
-	ed   *multiline.Editor
+	vm     *goja.Runtime
+	ed     *multiline.Editor
+	cancel context.CancelFunc
 }
 
-func (r *Reader) ReadLine(call goja.FunctionCall) goja.Value {
-	if r.ed == nil {
-		r.ed = &multiline.Editor{}
-		r.ed.SetPrompt(func(w io.Writer, i int) (int, error) {
-			if i == 0 {
-				return w.Write([]byte(r.conf.Prompt))
-			} else {
-				return w.Write([]byte(strings.Repeat(" ", len(r.conf.Prompt))))
-			}
-		})
-		r.ed.SubmitOnEnterWhen(func(s []string, i int) bool { return true })
+type Options struct {
+	AutoInput         []string      `json:"auto_input"`
+	Prompt            goja.Callable `json:"prompt"`
+	SubmitOnEnterWhen goja.Callable `json:"submitOnEnterWhen"`
+}
+
+func (r *Reader) ReadLine(conf Options) (string, error) {
+	// AutoInput / AutoOutput
+	if len(conf.AutoInput) > 0 {
+		r.ed.LineEditor.Tty = &auto.Pilot{
+			Text: conf.AutoInput,
+		}
+		r.ed.SetWriter(io.Discard)
 	}
-	ctx := context.Background()
+
+	// Prompt
+	r.ed.SetPrompt(func(w io.Writer, line int) (int, error) {
+		prompt := "> "
+		if conf.Prompt == nil {
+			if line == 0 {
+				return w.Write([]byte(prompt))
+			} else {
+				return w.Write(append([]byte(strings.Repeat(".", len(prompt)-1)), ' '))
+			}
+		}
+		p, _ := conf.Prompt(goja.Undefined(), r.vm.ToValue(line))
+		prompt = fmt.Sprintf("%v", p.Export())
+		return w.Write([]byte(prompt))
+	})
+	// SubmitOnEnterWhen
+	r.ed.SubmitOnEnterWhen(func(s []string, idx int) bool {
+		if conf.SubmitOnEnterWhen == nil {
+			return true
+		}
+		result := false
+		b, err := conf.SubmitOnEnterWhen(goja.Undefined(), r.vm.ToValue(s), r.vm.ToValue(idx))
+		if err != nil {
+			fmt.Println("SubmitOnEnterWhen error:", err)
+			return false
+		}
+		result = b.Export().(bool)
+		return result
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r.cancel = cancel
+
 	if lines, err := r.ed.Read(ctx); err != nil {
-		return r.rt.NewGoError(err)
+		return "", err
 	} else {
-		return r.rt.ToValue(strings.Join(lines, "\n"))
+		return strings.Join(lines, "\n"), nil
+	}
+}
+
+func (r *Reader) Close() {
+	if cancel := r.cancel; cancel != nil {
+		cancel()
 	}
 }
