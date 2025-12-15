@@ -1,3 +1,4 @@
 const {sayHello} = require("demo");
+const {args} = require("process");
 
-sayHello(runtime.args[0]);
+sayHello(args[0]);

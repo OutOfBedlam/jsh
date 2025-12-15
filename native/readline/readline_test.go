@@ -1,13 +1,11 @@
 package readline
 
 import (
-	"io/fs"
-	"os"
+	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/OutOfBedlam/jsh"
-	"github.com/dop251/goja_nodejs/require"
 	"github.com/nyaosorg/go-readline-ny/keys"
 )
 
@@ -24,21 +22,22 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
-		env := &jsh.TestEnv{
-			// ExecBuilderFunc: testExecBuilder, // no exec
-			Mounts: map[string]fs.FS{"/work": os.DirFS("./test/")},
-			Natives: map[string]require.ModuleLoader{
-				"readline": Module,
-			},
-			Vars: tc.vars,
-		}
-		if len(tc.input) > 0 {
-			env.Input.WriteString(strings.Join(tc.input, ""))
-		}
-		jr := &jsh.JSRuntime{
+		conf := jsh.Config{
 			Name:   tc.name,
-			Source: tc.script,
-			Env:    env,
+			Code:   tc.script,
+			Dir:    "../../test/",
+			Env:    tc.vars,
+			Reader: &bytes.Buffer{},
+			Writer: &bytes.Buffer{},
+		}
+		jr, err := jsh.NewEngine(conf)
+		if err != nil {
+			t.Fatalf("Failed to create JSRuntime: %v", err)
+		}
+		jr.RegisterNativeModule("readline", Module)
+
+		if len(tc.input) > 0 {
+			conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, ""))
 		}
 		if err := jr.Run(); err != nil {
 			if tc.err == "" || !strings.Contains(err.Error(), tc.err) {
@@ -47,7 +46,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			return
 		}
 
-		gotOutput := env.Output.String()
+		gotOutput := conf.Writer.(*bytes.Buffer).String()
 		lines := strings.Split(gotOutput, "\n")
 		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
 			t.Fatalf("Expected %d output lines, got %d\n%s", len(tc.output), len(lines)-1, gotOutput)
@@ -96,10 +95,11 @@ func TestReadLine(t *testing.T) {
 			name: "readline-simple",
 			script: `
 			try{
+				const {env} = require('process');
 				const {ReadLine} = require('readline');
 				const r = new ReadLine({
 					prompt: (lineno) => { return "prompt> "},
-					auto_input: runtime.env.get("auto_input"),
+					autoInput: env.get("auto_input"),
 				});
 				console.println("PS:", r.options.prompt(0));
 				const line = r.readLine();
@@ -133,9 +133,10 @@ func TestReadLineSubmitOnEnterWhen(t *testing.T) {
 			name: "readline-submit-on-enter-when",
 			script: `
 			try{
+				const process = require('process');
 				const {ReadLine} = require('readline');
 				const r = new ReadLine({
-					auto_input: runtime.env.get("auto_input"),
+					autoInput: process.env.get("auto_input"),
 					submitOnEnterWhen: (lines, idx) => {
 						return lines[idx].endsWith(";");
 					},
@@ -172,9 +173,10 @@ func TestReadLineCancel(t *testing.T) {
 			name: "readline-cancel",
 			script: `
 			try{
+				const process = require('process');
 				const {ReadLine} = require('readline');
 				const r = new ReadLine({
-					auto_input: runtime.env.get("auto_input"),
+					autoInput: process.env.get("auto_input"),
 				});
 				const to = setTimeout(()=>{ r.close() }, 200);
 				const line = r.readLine();

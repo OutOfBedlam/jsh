@@ -1,15 +1,13 @@
 package ws
 
 import (
-	"io/fs"
+	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/OutOfBedlam/jsh"
-	"github.com/dop251/goja_nodejs/require"
 	"github.com/gorilla/websocket"
 )
 
@@ -51,20 +49,22 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
-		env := &jsh.TestEnv{
-			// ExecBuilderFunc: testExecBuilder, // no exec
-			Mounts: map[string]fs.FS{"/work": os.DirFS("./test/")},
-			Natives: map[string]require.ModuleLoader{
-				"ws": Module,
-			},
-			Vars: tc.vars,
-		}
-		env.Input.WriteString(strings.Join(tc.input, "\n") + "\n")
-
-		jr := &jsh.JSRuntime{
+		conf := jsh.Config{
 			Name:   tc.name,
-			Source: tc.script,
-			Env:    env,
+			Code:   tc.script,
+			Dir:    "../../test/",
+			Env:    tc.vars,
+			Reader: &bytes.Buffer{},
+			Writer: &bytes.Buffer{},
+		}
+		jr, err := jsh.NewEngine(conf)
+		if err != nil {
+			t.Fatalf("Failed to create JSRuntime: %v", err)
+		}
+		jr.RegisterNativeModule("ws", Module)
+
+		if len(tc.input) > 0 {
+			conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, ""))
 		}
 		if err := jr.Run(); err != nil {
 			if tc.err == "" || !strings.Contains(err.Error(), tc.err) {
@@ -73,7 +73,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			return
 		}
 
-		gotOutput := env.Output.String()
+		gotOutput := conf.Writer.(*bytes.Buffer).String()
 		lines := strings.Split(gotOutput, "\n")
 		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
 			t.Fatalf("Expected %d output lines, got %d\n%s", len(tc.output), len(lines)-1, gotOutput)
@@ -119,8 +119,8 @@ func TestWebSocket(t *testing.T) {
 		{
 			name: "constructor",
 			script: `
-				const m2 = require("ws");
-				const ws = new m2.WebSocket("ws://localhost:8080");
+				const {WebSocket} = require("ws");
+				const ws = new WebSocket("ws://localhost:8080");
 				console.println(ws.url);
 			`,
 			output: []string{
@@ -139,8 +139,9 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "connect",
 			script: `
+				const {env} = require('process');
 				const {WebSocket} = require("ws");
-				const ws = new WebSocket(runtime.env.get("testURL"));
+				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
 					console.log("websocket error: " + err);
 				});
@@ -160,22 +161,28 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "close",
 			script: `
+				const {env} = require('process');
 				const {WebSocket} = require("ws");
-				const ws = new WebSocket(runtime.env.get("testURL"));
+				const ws = new WebSocket(env.get("testURL"));
 				ws.on("open", function() {
+					console.println("websocket open");
 					ws.close();
 				});
-				ws.on("close", ()=>{ console.println("websocket closed"); });
+				ws.on("close", ()=>{
+					console.println("websocket closed");
+				});
 			`,
 			output: []string{
+				"websocket open",
 				"websocket closed",
 			},
 		},
 		{
 			name: "send_receive",
 			script: `
+				const {env} = require('process');
 				const {WebSocket} = require("ws");
-				const ws = new WebSocket(runtime.env.get("testURL"));
+				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
 					console.log("websocket error: " + err);
 				});
@@ -204,8 +211,9 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "multiple_event_listeners",
 			script: `
+				const {env} = require('process');
 				const {WebSocket} = require("ws");
-				const ws = new WebSocket(runtime.env.get("testURL"));
+				const ws = new WebSocket(env.get("testURL"));
 				const onMessage = function(m) {
 					console.println("got: "+m.data);
 				}
@@ -242,8 +250,9 @@ func TestWebSocketInvalidEventType(t *testing.T) {
 		{
 			name: "invalid_event_type",
 			script: `
+				const {env} = require('process');
 				const {WebSocket} = require("ws");
-				const ws = new WebSocket(runtime.env.get("testURL"));
+				const ws = new WebSocket(env.get("testURL"));
 				try {
 					ws.on("invalid_event", function() {});
 					console.println("undefined returned as expected");
@@ -275,11 +284,11 @@ func TestWebSocketConnectionError(t *testing.T) {
 				const {WebSocket} = require("ws");
 				const ws = new WebSocket("ws://127.0.0.1:9999");
 				ws.on("error", function(err){
-					console.println("websocket error: " + err);
+					console.println("err:",err.message);
 				});
 			`,
 			output: []string{
-				"websocket error: dial tcp 127.0.0.1:9999: connect: connection refused",
+				"err: dial tcp 127.0.0.1:9999: connect: connection refused",
 			},
 		},
 		{
@@ -287,16 +296,16 @@ func TestWebSocketConnectionError(t *testing.T) {
 			script: `
 				const {WebSocket} = require("ws");
 				const ws = new WebSocket("ws://127.0.0.1:9999");
+				ws.on("error", function(err){
+					console.println("err:", err.message);
+				});
 				setTimeout(function() {
-					try {
-						ws.send("test message");
-					} catch(e) {
-						console.println("send error: " + e);
-					}
+					ws.send("test message");
 				}, 500);
 			`,
 			output: []string{
-				"send error: GoError: websocket connection is closed",
+				"err: dial tcp 127.0.0.1:9999: connect: connection refused",
+				"err: websocket is not open",
 			},
 		},
 	}

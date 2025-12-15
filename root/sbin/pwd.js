@@ -1,3 +1,4 @@
 (() => {
-    console.println(runtime.env.get("PWD"));
+    const {env} = require("process");
+    console.println(env.get("PWD"));
 })()

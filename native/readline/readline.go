@@ -44,9 +44,9 @@ type Reader struct {
 }
 
 type Options struct {
-	AutoInput         []string      `json:"auto_input"`
-	Prompt            goja.Callable `json:"prompt"`
-	SubmitOnEnterWhen goja.Callable `json:"submitOnEnterWhen"`
+	AutoInput         []string
+	Prompt            goja.Callable
+	SubmitOnEnterWhen goja.Callable
 }
 
 func (r *Reader) ReadLine(conf Options) (string, error) {

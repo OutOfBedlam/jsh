@@ -6,17 +6,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 
-	"github.com/OutOfBedlam/jsh/global"
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 )
 
-func Run(conf Config) int {
+func NewEngine(conf Config) (*JSRuntime, error) {
 	fileSystem := NewFS()
 	fileSystem.Mount("/", Root(conf.Dev))
 
@@ -27,14 +28,25 @@ func Run(conf Config) int {
 		fileSystem.Mount("/work", dfs)
 	}
 
+	var reader io.Reader = os.Stdin
+	if conf.Reader != nil {
+		reader = conf.Reader
+	}
+	var writer io.Writer = os.Stdout
+	if conf.Writer != nil {
+		writer = conf.Writer
+	}
+	var execBuilderFunc ExecBuilderFunc
+	if conf.ExecBuilder != nil {
+		execBuilderFunc = conf.ExecBuilder
+	} else {
+		execBuilderFunc = execBuilder(conf.Dir, conf.Dev)
+	}
 	opts := []EnvOption{
 		WithFilesystem(fileSystem),
-		WithReader(os.Stdin),
-		WithWriter(os.Stdout),
-		WithExecBuilder(execBuilder(conf.Dir, conf.Dev)),
-	}
-	for n, m := range conf.ExtNativeModules {
-		opts = append(opts, WithNativeModule(n, m))
+		WithReader(reader),
+		WithWriter(writer),
+		WithExecBuilder(execBuilderFunc),
 	}
 	env := NewEnv(opts...)
 	env.Set("PATH", "/work:/sbin")
@@ -57,14 +69,13 @@ func Run(conf Config) int {
 		if cmd == "" {
 			// No command or script file provided
 			// start shell
-			b, _ := global.LoadSource(env, "/sbin/shell.js")
+			b, _ := LoadSource(env, "/sbin/shell.js")
 			scriptName = "shell.js"
 			script = string(b)
 		} else {
-			b, err := global.LoadSource(env, cmd)
+			b, err := LoadSource(env, cmd)
 			if err != nil {
-				fmt.Println("Command not found: " + cmd)
-				return 1
+				return nil, fmt.Errorf("command not found: %s", cmd)
 			}
 			// replace shebang line as javascript comment
 			if b[0] == '#' && b[1] == '!' {
@@ -74,9 +85,12 @@ func Run(conf Config) int {
 			script = string(b)
 		}
 	} else {
-		scriptName = "command-line"
+		scriptName = conf.Name
 		script = conf.Code
 		scriptArgs = conf.Args
+	}
+	if scriptName == "" {
+		scriptName = "ad-hoc"
 	}
 
 	jr := &JSRuntime{
@@ -86,6 +100,19 @@ func Run(conf Config) int {
 		Env:    env,
 	}
 
+	jr.registry = require.NewRegistry(
+		require.WithGlobalFolders("node_modules"),
+		require.WithLoader(jr.loadSource),
+	)
+	jr.registry.RegisterNativeModule("process", jr.Module)
+	jr.eventLoop = NewEventLoop(
+		eventloop.EnableConsole(false),
+		eventloop.WithRegistry(jr.registry),
+	)
+	return jr, nil
+}
+
+func (jr *JSRuntime) Main() int {
 	if err := jr.Run(); err != nil {
 		if ie, ok := err.(*goja.InterruptedError); ok {
 			frame := ie.Stack()[0]
@@ -117,7 +144,7 @@ func Root(devDir string) fs.FS {
 }
 
 // execBuilder builds an exec.Cmd to run jsh with the given code and args.
-func execBuilder(dir string, devDir string) global.ExecBuilderFunc {
+func execBuilder(dir string, devDir string) ExecBuilderFunc {
 	useSecretBox := os.Getenv("JSH_NO_SECRET_BOX") != "1"
 	return func(code string, args []string) (*exec.Cmd, error) {
 		self, err := os.Executable()
@@ -132,7 +159,7 @@ func execBuilder(dir string, devDir string) global.ExecBuilderFunc {
 				Args: args,
 				Dir:  dir,
 				Dev:  devDir,
-				Env:  map[string]string{},
+				Env:  map[string]any{},
 			}
 			secretBox, err := NewSecretBox(conf)
 			if err != nil {
@@ -202,13 +229,16 @@ func checkFS(dir string) (fileSystem fs.FS, err error) {
 }
 
 type Config struct {
-	Code string            `json:"code"`
-	Args []string          `json:"args"`
-	Env  map[string]string `json:"env"`
-	Dir  string            `json:"dir"`
-	Dev  string            `json:"dev"`
+	Name string         `json:"name"`
+	Code string         `json:"code"`
+	Args []string       `json:"args"`
+	Env  map[string]any `json:"env"`
+	Dir  string         `json:"dir"`
+	Dev  string         `json:"dev"`
 
-	ExtNativeModules map[string]require.ModuleLoader `json:"extNativeModules,omitempty"`
+	Writer      io.Writer       `json:"-"`
+	Reader      io.Reader       `json:"-"`
+	ExecBuilder ExecBuilderFunc `json:"-"`
 }
 
 type SecretBox struct {

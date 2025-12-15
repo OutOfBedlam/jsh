@@ -1,15 +1,13 @@
 package jsh
 
 import (
+	"bytes"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/OutOfBedlam/jsh/global"
 )
 
 type TestCase struct {
@@ -25,17 +23,24 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
-		env := &TestEnv{
-			ExecBuilderFunc: testExecBuilder,
-			Mounts:          map[string]fs.FS{"/work": os.DirFS("./test/")},
+		conf := Config{
+			Name: tc.name,
+			Code: tc.script,
+			Dir:  "./test/",
+			Env: map[string]any{
+				"PATH": "/work:/sbin",
+				"PWD":  "/work",
+			},
+			Reader:      &bytes.Buffer{},
+			Writer:      &bytes.Buffer{},
+			ExecBuilder: testExecBuilder,
 		}
-		env.Input.WriteString(strings.Join(tc.input, "\n") + "\n")
+		jr, err := NewEngine(conf)
+		if err != nil {
+			t.Fatalf("Failed to create JSRuntime: %v", err)
+		}
+		conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, "\n") + "\n")
 
-		jr := &JSRuntime{
-			Name:   tc.name,
-			Source: tc.script,
-			Env:    env,
-		}
 		if tc.preTest != nil {
 			tc.preTest(jr)
 		}
@@ -46,7 +51,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			tc.postTest(jr)
 		}
 
-		gotOutput := env.Output.String()
+		gotOutput := conf.Writer.(*bytes.Buffer).String()
 		lines := strings.Split(gotOutput, "\n")
 		if len(lines) != len(tc.output)+1 { // +1 for trailing newline
 			t.Fatalf("Expected %d output lines, got %d\n%s", len(tc.output), len(lines)-1, gotOutput)
@@ -59,7 +64,7 @@ func RunTest(t *testing.T, tc TestCase) {
 	})
 }
 
-var testExecBuilder global.ExecBuilderFunc
+var testExecBuilder ExecBuilderFunc
 
 func TestMain(m *testing.M) {
 	cmd := exec.Command("go", "build", "-o", "./tmp/jsh", "./cmd/jsh")
@@ -93,21 +98,11 @@ func TestJsh(t *testing.T) {
 			output: []string{"INFO  Hello, World!"},
 		},
 		{
-			name: "runtime_addShutdownHook",
+			name: "now",
 			script: `
-				console.log("Setting shutdown hook");
-				runtime.addShutdownHook(function() {
-					console.debug("Shutdown hook called");
-				});
-			`,
-			output: []string{
-				"INFO  Setting shutdown hook",
-				"DEBUG Shutdown hook called",
-			},
-		},
-		{
-			name:     "now",
-			script:   `const x = console; x.println("NOW:", now());`,
+				const x = console;
+				const {now} = require("process");
+				x.println("NOW:", now());`,
 			preTest:  func(jr *JSRuntime) { jr.nowFunc = func() time.Time { return time.Unix(1764728536, 0) } },
 			postTest: func(jr *JSRuntime) { jr.nowFunc = time.Now },
 			output: []string{
@@ -125,7 +120,7 @@ func TestJsh(t *testing.T) {
 			},
 		},
 		{
-			name: "node_modules_package_json",
+			name: "module_package_json",
 			script: `
 				const optparse = require("optparse");
 				var SWITCHES = [
@@ -148,57 +143,14 @@ func TestJsh(t *testing.T) {
 	}
 }
 
-func TestExec(t *testing.T) {
-	tests := []TestCase{
-		{
-			name: "runtime_exec",
-			script: `
-				runtime.exec("hello.js");
-			`,
-			output: []string{
-				"Hello undefined from demo.js!",
-			},
-		},
-		{
-			name: "runtime_exec_args",
-			script: `
-				runtime.exec("hello.js", "世界");
-			`,
-			output: []string{
-				"Hello 世界 from demo.js!",
-			},
-		},
-		{
-			name: "runtime_exec_string",
-			script: `
-				runtime.execString("console.log('Hello World')");
-			`,
-			output: []string{
-				"INFO  Hello World",
-			},
-		},
-		{
-			name: "runtime_exec_string_arg",
-			script: `
-				runtime.execString("console.log('Hello '+runtime.args[0])", "World");
-			`,
-			output: []string{
-				"INFO  Hello World",
-			},
-		},
-	}
-	for _, tc := range tests {
-		RunTest(t, tc)
-	}
-}
-
 func TestSetTimeout(t *testing.T) {
 	tests := []TestCase{
 		{
 			name: "setTimeout_basic",
 			script: `
-			let t = now();
-			setTimeout(() => {
+				const {now} = require("process");
+				let t = now();
+				setTimeout(() => {
 					console.log("Timeout executed");
 					testDone();
 				}, 100);
@@ -236,14 +188,14 @@ func TestSetTimeout(t *testing.T) {
 						clearTimeout(tm);
 						setTimeout(()=>{testDone();}, 100);
 					}
+					console.println("count:", counter,", sum:", sum);					
 				}
 				var tm = setTimeout(add, 50, 1);
-				runtime.addShutdownHook(() => {
-					console.println("Final count:", counter,", sum:", sum);
-				});
 			`,
 			output: []string{
-				"Final count: 3 , sum: 6",
+				"count: 1 , sum: 1",
+				"count: 2 , sum: 3",
+				"count: 3 , sum: 6",
 			},
 		},
 		{
@@ -265,27 +217,72 @@ func TestSetTimeout(t *testing.T) {
 	}
 }
 
-func TestEvents(t *testing.T) {
-	tests := []TestCase{
+func TestProcess(t *testing.T) {
+	testCases := []TestCase{
 		{
-			name: "event_emitter_basic",
+			name: "runtime_addShutdownHook",
 			script: `
-				const emitter = new EventEmitter();
-
-				emitter.on("greet", function(name) {
-					console.println("Hello, " + name + "!");
+				const {addShutdownHook} = require('process');
+				console.log("Setting shutdown hook");
+				addShutdownHook(function() {
+					console.debug("Shutdown hook called");
 				});
-
-				emitter.emit("greet", "Alice");
-				emitter.emit("greet", "Bob");
 			`,
 			output: []string{
-				"Hello, Alice!",
-				"Hello, Bob!",
+				"INFO  Setting shutdown hook",
+				"DEBUG Shutdown hook called",
 			},
 		},
 	}
-	for _, tc := range tests {
+	for _, tc := range testCases {
+		RunTest(t, tc)
+	}
+}
+
+func TestExec(t *testing.T) {
+	testCases := []TestCase{
+		{
+			name: "runtime_exec",
+			script: `
+				const {exec} = require('process');
+				exec("hello.js");
+			`,
+			output: []string{
+				"Hello undefined from demo.js!",
+			},
+		},
+		{
+			name: "runtime_exec_args",
+			script: `
+				const {exec} = require('process');
+				exec("hello.js", "世界");
+			`,
+			output: []string{
+				"Hello 世界 from demo.js!",
+			},
+		},
+		{
+			name: "runtime_exec_string",
+			script: `
+				const {execString} = require('process');
+				execString("console.log('Hello World')");
+			`,
+			output: []string{
+				"INFO  Hello World",
+			},
+		},
+		{
+			name: "runtime_exec_string_arg",
+			script: `
+				const {execString} = require('process');
+				execString("const {args} = require('process'); console.log('Hello '+args[0])", "World");
+			`,
+			output: []string{
+				"INFO  Hello World",
+			},
+		},
+	}
+	for _, tc := range testCases {
 		RunTest(t, tc)
 	}
 }

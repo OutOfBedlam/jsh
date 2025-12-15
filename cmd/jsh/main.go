@@ -6,10 +6,10 @@ import (
 	"os"
 
 	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/native/http"
 	"github.com/OutOfBedlam/jsh/native/readline"
 	"github.com/OutOfBedlam/jsh/native/shell"
 	"github.com/OutOfBedlam/jsh/native/ws"
-	"github.com/dop251/goja_nodejs/require"
 )
 
 // JSH options:
@@ -45,12 +45,16 @@ func main() {
 			conf.Args = append([]string{args[0]}, passthrough...)
 		}
 	}
-	conf.ExtNativeModules = map[string]require.ModuleLoader{
-		"ws":         ws.Module,
-		"readline":   readline.Module,
-		"@jsh/shell": shell.Module,
+	engine, err := jsh.NewEngine(conf)
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
 	}
-	os.Exit(jsh.Run(conf))
+	engine.RegisterNativeModule("ws", ws.Module)
+	engine.RegisterNativeModule("http", http.Module)
+	engine.RegisterNativeModule("readline", readline.Module)
+	engine.RegisterNativeModule("jsh:shell", shell.Module)
+	os.Exit(engine.Main())
 }
 
 // argAndPassthrough splits args into those before "--" and those after.

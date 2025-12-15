@@ -8,11 +8,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/OutOfBedlam/jsh/global"
 	"github.com/OutOfBedlam/jsh/log"
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
+	"github.com/dop251/goja_nodejs/url"
 )
 
 type JSRuntime struct {
@@ -20,11 +20,21 @@ type JSRuntime struct {
 	Source string
 	Args   []string
 	Strict bool
-	Env    global.Env
+	Env    Env
 
+	registry      *require.Registry
+	eventLoop     *eventloop.EventLoop
 	exitCode      int
 	shutdownHooks []func()
 	nowFunc       func() time.Time
+}
+
+func (jr *JSRuntime) RegisterNativeModule(name string, loader require.ModuleLoader) {
+	jr.registry.RegisterNativeModule(name, loader)
+}
+
+func (jr *JSRuntime) EventLoop() *eventloop.EventLoop {
+	return jr.eventLoop
 }
 
 func (jr *JSRuntime) Run() error {
@@ -42,21 +52,6 @@ func (jr *JSRuntime) Run() error {
 		}
 	}()
 
-	registry := require.NewRegistry(
-		require.WithGlobalFolders("node_modules"),
-		require.WithLoader(jr.loadSource),
-	)
-	if envNM, ok := jr.Env.(global.EnvNativeModule); ok {
-		for name, loader := range envNM.NativeModules() {
-			registry.RegisterNativeModule(name, loader)
-		}
-	}
-
-	loop := global.NewEventLoop(
-		eventloop.EnableConsole(false),
-		eventloop.WithRegistry(registry),
-	)
-
 	// guarantee shutdown hooks run at the end
 	defer func() {
 		slices.Reverse(jr.shutdownHooks)
@@ -70,25 +65,10 @@ func (jr *JSRuntime) Run() error {
 		return err
 	}
 	var retErr error = nil
-	loop.Run(func(vm *goja.Runtime) {
-		vm.SetFieldNameMapper(goja.TagFieldNameMapper("json", true))
+	jr.eventLoop.Run(func(vm *goja.Runtime) {
+		url.Enable(vm)
+		vm.SetFieldNameMapper(goja.UncapFieldNameMapper())
 		vm.Set("console", log.SetConsole(vm, jr.Env.Writer()))
-		vm.Set("eventloop", loop)
-		if jr.nowFunc == nil {
-			vm.Set("now", time.Now)
-		} else {
-			vm.Set("now", jr.nowFunc)
-		}
-
-		obj := vm.NewObject()
-		vm.Set("runtime", obj)
-		obj.Set("env", jr.Env)
-		obj.Set("args", jr.Args)
-		obj.Set("addShutdownHook", jr.doAddShutdownHook)
-		obj.Set("exit", doExit(vm))
-		obj.Set("exec", doExec(vm, jr.exec))
-		obj.Set("execString", doExecString(vm, jr.exec))
-
 		if _, err := vm.RunProgram(program); err != nil {
 			retErr = err
 			jr.exitCode = -1
@@ -102,25 +82,42 @@ func (jr *JSRuntime) ExitCode() int {
 }
 
 func (jr *JSRuntime) loadSource(moduleName string) ([]byte, error) {
-	return global.LoadSource(jr.Env, moduleName)
+	return LoadSource(jr.Env, moduleName)
 }
 
-func (jr *JSRuntime) doAddShutdownHook(hook func()) {
+func (jr *JSRuntime) AddShutdownHook(hook func()) {
 	jr.shutdownHooks = append(jr.shutdownHooks, hook)
+}
+
+func (jr *JSRuntime) Exec(vm *goja.Runtime, source string, args []string) goja.Value {
+	eb := jr.Env.ExecBuilder()
+	if eb == nil {
+		return vm.NewGoError(fmt.Errorf("no command builder defined"))
+	}
+	cmd, err := eb(source, args)
+	if err != nil {
+		return vm.NewGoError(err)
+	}
+	return jr.exec0(vm, cmd)
 }
 
 type Exit struct {
 	Code int
 }
 
-func doExit(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
-	return func(call goja.FunctionCall) goja.Value {
-		exit := Exit{Code: 0}
-		if len(call.Arguments) > 0 {
-			exit.Code = int(call.Argument(0).ToInteger())
-		}
-		vm.Interrupt(exit)
-		return goja.Undefined()
+func (jr *JSRuntime) Module(vm *goja.Runtime, module *goja.Object) {
+	exports := module.Get("exports").(*goja.Object)
+	exports.Set("env", jr.Env)
+	exports.Set("args", jr.Args)
+	exports.Set("addShutdownHook", jr.AddShutdownHook)
+	exports.Set("exit", doExit(vm))
+	exports.Set("exec", doExec(vm, jr.Exec))
+	exports.Set("execString", doExecString(vm, jr.Exec))
+	exports.Set("eventLoop", jr.EventLoop())
+	if jr.nowFunc == nil {
+		exports.Set("now", time.Now)
+	} else {
+		exports.Set("now", jr.nowFunc)
 	}
 }
 
@@ -158,18 +155,13 @@ func doExec(vm *goja.Runtime, exec func(vm *goja.Runtime, source string, args []
 	}
 }
 
-func (jr *JSRuntime) exec(vm *goja.Runtime, source string, args []string) goja.Value {
-	env, ok := jr.Env.(global.EnvExec)
-	if !ok {
-		return vm.NewGoError(fmt.Errorf("environment does not support exec"))
+func doExit(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		exit := Exit{Code: 0}
+		if len(call.Arguments) > 0 {
+			exit.Code = int(call.Argument(0).ToInteger())
+		}
+		vm.Interrupt(exit)
+		return goja.Undefined()
 	}
-	eb := env.ExecBuilder()
-	if eb == nil {
-		return vm.NewGoError(fmt.Errorf("no command builder defined"))
-	}
-	cmd, err := eb(source, args)
-	if err != nil {
-		return vm.NewGoError(err)
-	}
-	return jr.exec0(vm, cmd)
 }

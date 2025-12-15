@@ -4,8 +4,6 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
-
-	"github.com/OutOfBedlam/jsh/global"
 )
 
 // FS allows mounting multiple fs.FS at different paths
@@ -28,7 +26,7 @@ func (m *FS) Mount(mountPoint string, filesystem fs.FS) error {
 		return fs.ErrInvalid
 	}
 
-	mountPoint = global.CleanPath(mountPoint)
+	mountPoint = CleanPath(mountPoint)
 
 	// Check for conflicting mounts
 	for existing := range m.mounts {
@@ -51,7 +49,7 @@ func (m *FS) Mount(mountPoint string, filesystem fs.FS) error {
 
 // Unmount removes a mounted filesystem at the given path
 func (m *FS) Unmount(mountPoint string) error {
-	mountPoint = global.CleanPath(mountPoint)
+	mountPoint = CleanPath(mountPoint)
 
 	if _, ok := m.mounts[mountPoint]; !ok {
 		return fs.ErrNotExist
@@ -73,7 +71,7 @@ func (m *FS) Mounts() []string {
 
 // Open implements fs.FS
 func (m *FS) Open(name string) (fs.File, error) {
-	name = global.CleanPath(name)
+	name = CleanPath(name)
 	// Validate path: skip leading / for fs.ValidPath check
 	validPath := strings.TrimPrefix(name, "/")
 	if validPath == "" {
@@ -119,7 +117,7 @@ func (m *FS) Open(name string) (fs.File, error) {
 
 // ReadDir implements fs.ReadDirFS
 func (m *FS) ReadDir(name string) ([]fs.DirEntry, error) {
-	name = global.CleanPath(name)
+	name = CleanPath(name)
 	// Validate path: skip leading / for fs.ValidPath check
 	validPath := strings.TrimPrefix(name, "/")
 	if validPath == "" {

@@ -102,7 +102,7 @@ func TestJshMain(t *testing.T) {
 			// Execute the command
 			err := cmd.Run()
 			if err != nil {
-				t.Fatalf("Failed to execute command: %v\nStderr: %s", err, stderr.String())
+				t.Fatalf("Failed to execute command: %v\n%s", err, stdout.String())
 			}
 
 			// Get the output and trim whitespace

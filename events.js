@@ -1,15 +1,16 @@
 class EventEmitter {
     constructor() {
         this.events = {};
+        this.supportedEvents = [];
         this.addEventListener = this.on;
     }
 
     on(eventName, callback) {
-        if (this.validateEventListener && this.validateEventListener(eventName, callback) === false) {
+        if (this.supportedEvents.includes(eventName) === false) {
             throw new Error(`"${eventName}" is not supported event type`);
         }
         if (typeof callback !== 'function') {
-            throw new TypeError('callback must be a function');
+            throw new Error('callback must be a function');
         }
         if (!this.events[eventName]) {
             this.events[eventName] = [];

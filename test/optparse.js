@@ -1,4 +1,5 @@
 var optparse = require('optparse');
+var {args} = require('process');
 
 var SWITCHES = [
     ['-h', '--help', 'Show this help message'],
@@ -24,6 +25,6 @@ parser.on('help', function() {
     options.help = true;
 });
 
-parser.parse(runtime.args);
+parser.parse(args);
 
 console.println('Options:', `{help:${options.help}, version:${options.version}}`);

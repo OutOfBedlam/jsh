@@ -1,7 +1,8 @@
 (() => {
-    const pwd = runtime.env.get("PWD");
-    const fs = runtime.env.filesystem();
-    const args = runtime.args;
+    const process = require("process");
+    const pwd = process.env.get("PWD");
+    const fs = process.env.filesystem();
+    const args = process.args;
 
     var dirs = args.length === 0 ? [pwd] : args;
     var showDir = dirs.length > 1;

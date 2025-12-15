@@ -2,10 +2,10 @@ package shell
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
-	"github.com/OutOfBedlam/jsh/global"
 	"github.com/OutOfBedlam/jsh/log"
 	"github.com/dop251/goja"
 	"github.com/hymkor/go-multiline-ny"
@@ -30,15 +30,6 @@ func shell(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 			history: NewHistory("history", 100),
 		}
 
-		if val := rt.Get("runtime").ToObject(rt).Get("env"); val != nil {
-			if env := val.Export().(global.Env); env != nil {
-				shell.env = env
-			}
-		}
-		if shell.env.Get("PWD") == nil {
-			shell.env.Set("PWD", "/")
-		}
-
 		obj := rt.NewObject()
 		obj.Set("run", shell.Run)
 		return obj
@@ -47,8 +38,6 @@ func shell(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 
 type Shell struct {
 	rt      *goja.Runtime
-	env     global.Env
-	pwd     string
 	history *History
 }
 
@@ -148,7 +137,7 @@ func (sh *Shell) process(line string) (int, bool) {
 				val := sh.exec(cmd, pipe.Args)
 				switch v := val.Export().(type) {
 				default:
-					log.Println(val.String())
+					log.Print(val.String())
 				case int64:
 					exitCode = int(v)
 				}
@@ -162,12 +151,16 @@ func (sh *Shell) process(line string) (int, bool) {
 }
 
 func (sh *Shell) exec(command string, args []string) goja.Value {
-	obj := sh.rt.Get("runtime").(*goja.Object)
-	exec, _ := goja.AssertFunction(obj.Get("exec"))
-	values := []goja.Value{sh.rt.ToValue(command)}
+	parts := []string{fmt.Sprintf("%q", command)}
 	for _, arg := range args {
-		values = append(values, sh.rt.ToValue(arg))
+		parts = append(parts, fmt.Sprintf("%q", arg))
 	}
-	val, _ := exec(goja.Undefined(), values...)
+	str := strings.Join(parts, ", ")
+
+	val, _ := sh.rt.RunString(fmt.Sprintf(`(()=>{
+		const {exec} = require("process");
+		return exec(%s);
+	})()`, str))
+
 	return val
 }

@@ -1,10 +1,6 @@
-class ReadLine extends EventEmitter {
+class ReadLine {
     constructor(options) {
-        super();
         this.raw = module.NewReadLine(this, options || {});
-        this.validateEventListener = (eventName, callback) => {
-            return ["line", "close", "pause", "resume", "SIGINT"].includes(eventName);
-        }
         this.options = options || {};
     }
     readLine(options) {
