@@ -17,7 +17,9 @@ var readlineJS string
 
 func Module(rt *goja.Runtime, module *goja.Object) {
 	// Export native functions to embedded JS module
-	module.Set("NewReadLine", NewReadLine(rt))
+	m := rt.NewObject()
+	m.Set("NewReadLine", NewReadLine(rt))
+	rt.Set("_readline", m)
 
 	// Run the embedded JS module code
 	rt.Set("module", module)
@@ -25,6 +27,7 @@ func Module(rt *goja.Runtime, module *goja.Object) {
 	if err != nil {
 		panic(err)
 	}
+	rt.Set("module", goja.Undefined())
 }
 
 func NewReadLine(vm *goja.Runtime) func(obj *goja.Object, opt *goja.Object) *Reader {

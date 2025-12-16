@@ -143,7 +143,7 @@ func TestWebSocketConnection(t *testing.T) {
 				const {WebSocket} = require("ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
-					console.log("websocket error: " + err);
+					console.log("websocket error: " + err.message);
 				});
 				ws.on("open", function(){
 					console.log("websocket open");
@@ -230,37 +230,6 @@ func TestWebSocketConnection(t *testing.T) {
 				"got: trigger message",
 				"websocket closed",
 			},
-		},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(echoServer))
-	defer server.Close()
-	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-
-	for _, tc := range tests {
-		tc.vars = map[string]any{
-			"testURL": wsURL,
-		}
-		RunTest(t, tc)
-	}
-}
-
-func TestWebSocketInvalidEventType(t *testing.T) {
-	tests := []TestCase{
-		{
-			name: "invalid_event_type",
-			script: `
-				const {env} = require('process');
-				const {WebSocket} = require("ws");
-				const ws = new WebSocket(env.get("testURL"));
-				try {
-					ws.on("invalid_event", function() {});
-					console.println("undefined returned as expected");
-				} finally {
-					ws.close(); 
-				}
-			`,
-			err: `"invalid_event" is not supported event type`,
 		},
 	}
 

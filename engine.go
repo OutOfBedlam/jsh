@@ -10,6 +10,7 @@ import (
 
 	"github.com/OutOfBedlam/jsh/log"
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/buffer"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/dop251/goja_nodejs/url"
@@ -66,6 +67,7 @@ func (jr *JSRuntime) Run() error {
 	}
 	var retErr error = nil
 	jr.eventLoop.Run(func(vm *goja.Runtime) {
+		buffer.Enable(vm)
 		url.Enable(vm)
 		vm.SetFieldNameMapper(goja.UncapFieldNameMapper())
 		vm.Set("console", log.SetConsole(vm, jr.Env.Writer()))
@@ -113,7 +115,7 @@ func (jr *JSRuntime) Module(vm *goja.Runtime, module *goja.Object) {
 	exports.Set("exit", doExit(vm))
 	exports.Set("exec", doExec(vm, jr.Exec))
 	exports.Set("execString", doExecString(vm, jr.Exec))
-	exports.Set("eventLoop", jr.EventLoop())
+	exports.Set("dispatchEvent", dispatchEvent(jr.EventLoop()))
 	if jr.nowFunc == nil {
 		exports.Set("now", time.Now)
 	} else {

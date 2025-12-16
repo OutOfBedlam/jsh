@@ -2,6 +2,9 @@ package http
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +29,28 @@ func echoServer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write([]byte("Hello, World!"))
+	case "POST":
+		if r.Header.Get("Content-Type") != "application/json" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Content-Type must be application/json"))
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		defer r.Body.Close()
+		obj := struct {
+			Message string `json:"message"`
+			Reply   string `json:"reply,omitempty"`
+		}{}
+		if err := json.Unmarshal(body, &obj); err != nil {
+			fmt.Println("echoServer: invalid JSON:", err, ":", string(body))
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid JSON"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		obj.Reply = "Received"
+		b, _ := json.Marshal(&obj) // just to verify it's valid JSON
+		w.Write(b)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -81,21 +106,13 @@ func RunTest(t *testing.T, tc TestCase) {
 func TestHttpRequest(t *testing.T) {
 	tests := []TestCase{
 		{
-			name: "http_request_method_url",
+			name: "http_request_get",
 			script: `
 				const http = require("http");
 				const {env} = require('process');
 				const url = new URL(env.get("testURL")+"?echo=Hello?");
-				const agent = new http.Agent();
-				const req = http.request(url, {
-					host: url.host,
-					port: url.port,
-					path: url.pathname + url.search,
-					method: "get",
-					agent: agent,
-				});
-				req.end();
-				req.on("response", (response) => {
+				const req = http.request(url);
+				req.end((response) => {
 					const {statusCode, statusMessage} = response;
 				    console.println("Status Code:", statusCode);
 					console.println("Status:", statusMessage);
@@ -104,6 +121,65 @@ func TestHttpRequest(t *testing.T) {
 			output: []string{
 				"Status Code: 200",
 				"Status: 200 OK",
+			},
+		},
+		{
+			name: "http_request_method_url",
+			script: `
+				const http = require("http");
+				const {env} = require('process');
+				const url = new URL(env.get("testURL")+"?echo=Hello?");
+				const req = http.request(url, {
+					host: url.host,
+					port: url.port,
+					path: url.pathname + url.search,
+					method: "get",
+					agent: new http.Agent(),
+				});
+				req.end();
+				req.on("response", (response) => {
+					if (!response.ok) {
+						throw new Error("Request failed with status "+response.statusCode);
+					}
+					const {statusCode, statusMessage} = response;
+				    console.println("Status Code:", statusCode);
+					console.println("Status:", statusMessage);
+				});
+			`,
+			output: []string{
+				"Status Code: 200",
+				"Status: 200 OK",
+			},
+		},
+		{
+			name: "http_request_post",
+			script: `
+				const http = require("http");
+				const {env} = require('process');
+				const req = http.request(
+					env.get("testURL"),
+					{ method:"POST", headers: {"Content-Type":"application/json"} },
+				);
+				req.on("response", (response) => {
+					if (!response.ok) {
+						throw new Error("Request failed with status "+response.statusCode);
+					}
+					const {statusCode, statusMessage} = response;
+					console.println("Status Code:", statusCode);
+					console.println("Status:", statusMessage);
+					const body = response.json()
+					console.println("message:"+ body.message + ", " + "reply:" + body.reply);
+				});
+				req.on("error", (err) => {
+					console.println("Request error:", err.message);
+				});
+				req.write('{"message": "Hello, ');
+				req.end('World!"}');
+			`,
+			output: []string{
+				"Status Code: 200",
+				"Status: 200 OK",
+				"message:Hello, World!, reply:Received",
 			},
 		},
 	}
@@ -138,13 +214,13 @@ func TestHttpGet(t *testing.T) {
 			},
 		},
 		{
-			name: "http_get_string_rsp",
+			name: "http_get_string_on",
 			script: `
 				const http = require("http");
 				const {env} = require('process');
 				const url = env.get("testURL")+"?echo=Hi?";
-				const rsp = http.get(url);
-				rsp.then((response)=> {
+				const req = http.get(url)
+				req.on("response", (response)=> {
 				    console.println("Status Code:", response.statusCode);
 					console.println("Status:", response.statusMessage);
 				});
@@ -225,7 +301,7 @@ func TestHttpGet(t *testing.T) {
 					const {statusCode, statusMessage} = response;
 				    console.println("Status Code:", statusCode);
 					console.println("Status:", statusMessage);
-					console.println("Body:", response.body.toString());
+					console.println("Body:", response.string());
 					
 					contentLength = response.headers["Content-Length"];
 					contentType = response.headers["Content-Type"];

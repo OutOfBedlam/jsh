@@ -1,7 +1,9 @@
 package http
 
 import (
+	"bytes"
 	_ "embed"
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -13,48 +15,87 @@ var httpJS string
 
 func Module(rt *goja.Runtime, module *goja.Object) {
 	// Export native functions to embedded JS module
-	module.Set("NewRequest", NewRequest)
-	module.Set("NewAgent", NewAgent)
-	module.Set("ReadAll", ReadAll)
+	m := rt.NewObject()
+	m.Set("NewClient", NewClient)
+	m.Set("NewRequest", NewRequest)
+	rt.Set("_http", m)
+
 	// Run the embedded JS module code
 	rt.Set("module", module)
-	_, err := rt.RunString("(function(){" + httpJS + "})()")
+	_, err := rt.RunString("(()=>{" + httpJS + "})()")
 	if err != nil {
 		panic(err)
 	}
+	rt.Set("module", goja.Undefined())
 }
 
-func ReadAll(r io.Reader) ([]byte, error) {
-	if r == nil {
-		return nil, nil
-	}
-	return io.ReadAll(r)
-}
-
-func NewRequest(method string, url string, body io.Reader) (*http.Request, error) {
-	return http.NewRequest(method, url, body)
-}
-
-func NewAgent() *Agent {
-	return &Agent{
+func NewClient() *Client {
+	return &Client{
 		client: &http.Client{},
 	}
 }
 
-type Agent struct {
+type Client struct {
 	client *http.Client
 }
 
-func (agent *Agent) Do(req *http.Request) (map[string]any, error) {
-	rsp, err := agent.client.Do(req)
+func (agent *Client) Do(req *Request) (*Response, error) {
+	rsp, err := agent.client.Do(req.Request)
 	if err != nil {
 		return nil, err
 	}
-	body, err := ReadAll(rsp.Body)
+	ret := NewResponse(rsp)
+	// IMPORTANT: Caller is responsible for closing the response body
+	// see Response.Close()
+	return ret, nil
+}
+
+type Request struct {
+	*http.Request
+}
+
+func NewRequest(method string, url string) (*Request, error) {
+	ret := &Request{}
+	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	rsp.Body.Close()
+	ret.Request = req
+	return ret, nil
+}
+
+func (r *Request) WriteString(s string, encoding string) (n int, err error) {
+	return r.Write([]byte(s))
+}
+
+func (r *Request) Write(p []byte) (n int, err error) {
+	if r.Body == nil {
+		r.Body = io.NopCloser(bytes.NewReader(p))
+	} else {
+		// Append to existing body
+		buf := new(bytes.Buffer)
+		_, err := io.Copy(buf, r.Body)
+		if err != nil {
+			return 0, err
+		}
+		buf.Write(p)
+		r.Body = io.NopCloser(bytes.NewReader(buf.Bytes()))
+	}
+	return len(p), nil
+}
+
+type Response struct {
+	rsp           *http.Response
+	Ok            bool
+	Proto         string
+	ProtoMajor    int
+	ProtoMinor    int
+	StatusCode    int
+	StatusMessage string
+	Headers       map[string]any
+}
+
+func NewResponse(rsp *http.Response) *Response {
 	headers := map[string]any{}
 	for k, v := range rsp.Header {
 		if len(v) == 1 {
@@ -63,31 +104,35 @@ func (agent *Agent) Do(req *http.Request) (map[string]any, error) {
 			headers[k] = v
 		}
 	}
-	ret := map[string]any{
-		"ok":            rsp.StatusCode >= 200 && rsp.StatusCode < 300,
-		"proto":         rsp.Proto,
-		"protoMajor":    rsp.ProtoMajor,
-		"protoMinor":    rsp.ProtoMinor,
-		"statusCode":    rsp.StatusCode,
-		"statusMessage": rsp.Status,
-		"headers":       headers,
-		"body":          &Buffer{data: body},
+	return &Response{
+		rsp:           rsp,
+		Ok:            rsp.StatusCode >= 200 && rsp.StatusCode < 300,
+		Proto:         rsp.Proto,
+		ProtoMajor:    rsp.ProtoMajor,
+		ProtoMinor:    rsp.ProtoMinor,
+		StatusCode:    rsp.StatusCode,
+		StatusMessage: rsp.Status,
+		Headers:       headers,
 	}
-	return ret, nil
 }
 
-type Options struct {
-	Hostname string            `json:"hostname"`
-	Port     int               `json:"port"`
-	Path     string            `json:"path"`
-	Method   string            `json:"method"`
-	Headers  map[string]string `json:"headers"`
+func (b *Response) Close() error {
+	return b.rsp.Body.Close()
 }
 
-type Buffer struct {
-	data []byte
+func (b *Response) Json() map[string]any {
+	dec := json.NewDecoder(b.rsp.Body)
+	var result map[string]any
+	if err := dec.Decode(&result); err != nil {
+		return nil
+	}
+	return result
 }
 
-func (b *Buffer) ToString() string {
-	return string(b.data)
+func (b *Response) String() string {
+	data, err := io.ReadAll(b.rsp.Body)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }

@@ -217,7 +217,7 @@ func TestSetTimeout(t *testing.T) {
 	}
 }
 
-func TestProcess(t *testing.T) {
+func TestShutdownHook(t *testing.T) {
 	testCases := []TestCase{
 		{
 			name: "runtime_addShutdownHook",
@@ -231,6 +231,88 @@ func TestProcess(t *testing.T) {
 			output: []string{
 				"INFO  Setting shutdown hook",
 				"DEBUG Shutdown hook called",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		RunTest(t, tc)
+	}
+}
+
+func TestEventLoop(t *testing.T) {
+	testCases := []TestCase{
+		{
+			name: "eventloop",
+			script: `
+				console.log("Add event loop");
+				setImmediate(() => {
+					console.debug("event loop called");
+				});
+			`,
+			output: []string{
+				"INFO  Add event loop",
+				"DEBUG event loop called",
+			},
+		},
+		{
+			// the problem is the nested runOnLoop can not append to the loop
+			// while loop is running with mutex lock of the job queue.
+			name: "eventloop_loop",
+			script: `
+				function doIt() {
+					console.println("Timeout before doIt");
+					setImmediate(() => {
+						console.println("event loop called from #1");
+						setImmediate(() => {
+							console.println("event loop called from #2");
+						});
+					});
+				}
+				function doLater() {
+					console.println("Event loop after promise resolved");
+				}
+				console.println("Add event loop");
+				setImmediate(() => {
+					console.println("Starting doIt");
+					setImmediate(() => {
+						doIt();
+					});
+				});
+			`,
+			output: []string{
+				"Add event loop",
+				"Starting doIt",
+				"Timeout before doIt",
+				"event loop called from #1",
+				"event loop called from #2",
+			},
+		},
+		{
+			name: "eventloop_promise",
+			script: `
+				const {eventLoop} = require('process');
+				function doIt() {
+					return new Promise((resolve) => {
+						setImmediate(() => {
+							console.println("event loop called from promise");
+							resolve();
+						});
+					});
+				}
+				function doLater() {
+					console.println("Event loop after promise resolved");
+				}
+				console.println("Add event loop");
+				doIt().then(() => {
+					console.println("Promise resolved");
+					setImmediate(doLater);
+				});
+			`,
+			output: []string{
+				"Add event loop",
+				"event loop called from promise",
+				"Promise resolved",
+				"Event loop after promise resolved",
 			},
 		},
 	}

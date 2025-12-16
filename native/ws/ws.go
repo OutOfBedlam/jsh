@@ -6,7 +6,6 @@ import (
 
 	"github.com/OutOfBedlam/jsh"
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/gorilla/websocket"
 )
 
@@ -15,7 +14,9 @@ var wsJS string
 
 func Module(rt *goja.Runtime, module *goja.Object) {
 	// Export native functions to embedded JS module
-	module.Set("NewWebSocket", NewNativeWebSocket)
+	m := rt.NewObject()
+	m.Set("NewWebSocket", NewNativeWebSocket)
+	rt.Set("_ws", m)
 
 	// Run the embedded JS module code
 	rt.Set("module", module)
@@ -23,63 +24,76 @@ func Module(rt *goja.Runtime, module *goja.Object) {
 	if err != nil {
 		panic(err)
 	}
+	rt.Set("module", goja.Undefined())
 }
 
-func NewNativeWebSocket(obj *goja.Object) *WebSocket {
+func NewNativeWebSocket(obj *goja.Object, url string, dispatch jsh.EventDispatchFunc) *WebSocket {
 	return &WebSocket{
 		obj: obj,
+		url: url,
+		emit: func(event string, data any) {
+			dispatch(obj, event, data)
+		},
 	}
 }
 
 type WebSocket struct {
-	obj *goja.Object
+	obj  *goja.Object
+	url  string
+	emit func(event string, data any)
+	conn *websocket.Conn
 }
 
-func (ws *WebSocket) Connect(addr string) (*websocket.Conn, error) {
-	if s, _, err := websocket.DefaultDialer.Dial(addr, nil); err != nil {
-		return nil, err
+func (ws *WebSocket) Connect() error {
+	if conn, _, err := websocket.DefaultDialer.Dial(ws.url, nil); err != nil {
+		return err
 	} else {
-		return s, nil
+		ws.conn = conn
+		go ws.run()
+		return nil
 	}
 }
 
-func (ws *WebSocket) Send(conn *websocket.Conn, typ int, message any) error {
+func (ws *WebSocket) Close() error {
+	if ws.conn == nil {
+		return nil
+	}
+	return ws.conn.Close()
+}
+
+func (ws *WebSocket) Send(typ int, message any) error {
+	if ws.conn == nil {
+		return fmt.Errorf("websocket is not open")
+	}
 	switch val := message.(type) {
 	case string:
-		return conn.WriteMessage(typ, []byte(val))
+		return ws.conn.WriteMessage(typ, []byte(val))
 	case []byte:
-		return conn.WriteMessage(typ, val)
+		return ws.conn.WriteMessage(typ, val)
 	default:
 		return fmt.Errorf("unsupported message type: %T", val)
 	}
 }
 
-func (ws *WebSocket) emit(loop *eventloop.EventLoop, eventType string, args ...any) {
-	jsh.Emit(loop, ws.obj, eventType, args...)
-}
-
-func (ws *WebSocket) Start(conn *websocket.Conn, loop *eventloop.EventLoop) {
-	go ws.run(conn, loop)
-}
-
-func (ws *WebSocket) run(conn *websocket.Conn, loop *eventloop.EventLoop) {
+func (ws *WebSocket) run() {
 	for {
-		typ, message, err := conn.ReadMessage()
+		typ, message, err := ws.conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				ws.emit(loop, "close", err)
+				ws.emit("close", err)
 			} else {
-				ws.emit(loop, "error", err)
+				ws.emit("error", err)
 			}
 			return
 		}
-		data := map[string]any{}
+		data := map[string]any{
+			"type": typ,
+		}
 		if typ == websocket.TextMessage {
 			data["data"] = string(message)
 		} else {
 			data["data"] = message
 		}
-		data["type"] = typ
-		ws.emit(loop, "message", data)
+		ws.emit("message", data)
 	}
 }

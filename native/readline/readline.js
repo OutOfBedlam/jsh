@@ -1,6 +1,8 @@
+'use strict';
+
 class ReadLine {
     constructor(options) {
-        this.raw = module.NewReadLine(this, options || {});
+        this.raw = _readline.NewReadLine(this, options || {});
         this.options = options || {};
     }
     readLine(options) {

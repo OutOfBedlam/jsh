@@ -10,7 +10,6 @@ func TestEvents(t *testing.T) {
 			name: "event_emitter_basic",
 			script: `
 				const emitter = new EventEmitter();
-				emitter.supportedEvents.push("greet");
 				
 				emitter.on("greet", function(name) {
 					console.println("Hello, " + name + "!");
@@ -22,6 +21,22 @@ func TestEvents(t *testing.T) {
 			output: []string{
 				"Hello, Alice!",
 				"Hello, Bob!",
+			},
+		},
+		{
+			name: "event_emitter_basic",
+			script: `
+				const emitter = new EventEmitter();
+				
+				emitter.once("greet", function(name) {
+					console.println("Hello, " + name + "!");
+				});
+
+				emitter.emit("greet", "Alice");
+				emitter.emit("greet", "Bob");
+			`,
+			output: []string{
+				"Hello, Alice!",
 			},
 		},
 	}
