@@ -61,6 +61,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
+		jr.RegisterNativeModule("process", jr.Module)
 		jr.RegisterNativeModule("ws", Module)
 
 		if len(tc.input) > 0 {

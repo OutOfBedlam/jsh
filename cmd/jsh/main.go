@@ -50,10 +50,11 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	engine.RegisterNativeModule("ws", ws.Module)
-	engine.RegisterNativeModule("http", http.Module)
+	engine.RegisterNativeModule("process", engine.Module)
+	engine.RegisterNativeModule("shell", shell.Module)
 	engine.RegisterNativeModule("readline", readline.Module)
-	engine.RegisterNativeModule("jsh:shell", shell.Module)
+	engine.RegisterNativeModule("http", http.Module)
+	engine.RegisterNativeModule("ws", ws.Module)
 	os.Exit(engine.Main())
 }
 

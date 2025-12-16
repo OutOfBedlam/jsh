@@ -104,7 +104,6 @@ func NewEngine(conf Config) (*JSRuntime, error) {
 		require.WithGlobalFolders("node_modules"),
 		require.WithLoader(jr.loadSource),
 	)
-	jr.registry.RegisterNativeModule("process", jr.Module)
 	jr.eventLoop = NewEventLoop(
 		eventloop.EnableConsole(false),
 		eventloop.WithRegistry(jr.registry),
