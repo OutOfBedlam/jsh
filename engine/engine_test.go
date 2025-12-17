@@ -92,6 +92,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestJsh(t *testing.T) {
+	timeNow, _ := time.ParseInLocation(time.DateTime, "2025-12-03 11:22:16", time.Local)
 	ts := []TestCase{
 		{
 			name:   "console_log",
@@ -107,7 +108,7 @@ func TestJsh(t *testing.T) {
 			preTest:  func(jr *JSRuntime) { jr.nowFunc = func() time.Time { return time.Unix(1764728536, 0) } },
 			postTest: func(jr *JSRuntime) { jr.nowFunc = time.Now },
 			output: []string{
-				"NOW: 2025-12-03 11:22:16",
+				fmt.Sprintf("NOW: %s", timeNow.Format("2006-01-02 15:04:05")),
 			},
 		},
 		{
