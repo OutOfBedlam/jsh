@@ -48,6 +48,10 @@ class Connection {
             message: result.message()
         };
     }
+    append() {
+        let appender = this.conn.appender(this.ctx, ...arguments);
+        return appender
+    }
 }
 
 class Rows {

@@ -108,7 +108,7 @@ func TestJsh(t *testing.T) {
 			preTest:  func(jr *JSRuntime) { jr.nowFunc = func() time.Time { return time.Unix(1764728536, 0) } },
 			postTest: func(jr *JSRuntime) { jr.nowFunc = time.Now },
 			output: []string{
-				fmt.Sprintf("NOW: %s", timeNow.Format("2006-01-02 15:04:05")),
+				fmt.Sprintf("NOW: %s", timeNow.Format(time.DateTime)),
 			},
 		},
 		{

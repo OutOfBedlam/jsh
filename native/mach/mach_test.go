@@ -73,7 +73,6 @@ func TestDatabase(t *testing.T) {
 			name: "mach_exec",
 			script: `
 				const {Client} = require("mach");
-				const {now} = require("process");
 				const conf = require("process").env.get("conf");
 				const tick = require("process").env.get("tick");
 				try {
@@ -97,6 +96,33 @@ func TestDatabase(t *testing.T) {
 			},
 		},
 		{
+			name: "mach_append",
+			script: `
+				const {Client} = require("mach");
+				const {now} = require("process");
+				const conf = require("process").env.get("conf");
+				try {
+					db = new Client(conf);
+					conn = db.connect();
+					appender = conn.append("TAG");
+					for (let i = 0; i < 99; i++) {
+						appender.append('jsh', now(), 123 + i);
+					}
+					appender.flush();
+					result = appender.close();
+					console.println("Appended rows:", ...result);
+				} catch(err) {
+					console.println("Error: ", err.message);
+				} finally {
+					conn && conn.close();
+				 	db && db.close();
+				}
+			`,
+			output: []string{
+				"Appended rows: 99 0",
+			},
+		},
+		{
 			name: "mach_query_row",
 			script: `
 				const {Client} = require("mach");
@@ -114,7 +140,7 @@ func TestDatabase(t *testing.T) {
 				}
 			`,
 			output: []string{
-				"ROWNUM: 1 Count: 1",
+				"ROWNUM: 1 Count: 100",
 			},
 		},
 		{
@@ -125,7 +151,7 @@ func TestDatabase(t *testing.T) {
 				try {
 					db = new Client(conf);
 					conn = db.connect();
-					rows = conn.query("SELECT * from TAG limit ?", 2);
+					rows = conn.query("SELECT * from TAG order by time limit ?", 1);
 					for (const row of rows) {
 						console.println("ROWNUM:", row._ROWNUM, "NAME:", row.NAME, "TIME:", row.TIME, "VALUE:", row.VALUE);
 					}
