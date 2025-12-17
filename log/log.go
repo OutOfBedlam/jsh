@@ -105,6 +105,14 @@ func anyToPrintable(val any) any {
 		return fmt.Sprintf("[%s]", strings.Join(val, ", "))
 	case bool:
 		return val
+	case int:
+		return val
+	case *int:
+		return *val
+	case int32:
+		return val
+	case *int32:
+		return *val
 	case int64:
 		return val
 	case *int64:
