@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/nyaosorg/go-readline-ny/keys"
 )
 
@@ -22,7 +22,7 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
-		conf := jsh.Config{
+		conf := engine.Config{
 			Name:   tc.name,
 			Code:   tc.script,
 			Dir:    "../../test/",
@@ -30,11 +30,11 @@ func RunTest(t *testing.T, tc TestCase) {
 			Reader: &bytes.Buffer{},
 			Writer: &bytes.Buffer{},
 		}
-		jr, err := jsh.NewEngine(conf)
+		jr, err := engine.New(conf)
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Module)
+		jr.RegisterNativeModule("process", jr.Process)
 		jr.RegisterNativeModule("readline", Module)
 
 		if len(tc.input) > 0 {

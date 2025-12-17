@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/engine"
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
@@ -96,7 +96,7 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
-		conf := jsh.Config{
+		conf := engine.Config{
 			Name:   tc.name,
 			Code:   tc.script,
 			Dir:    "../../test/",
@@ -104,11 +104,11 @@ func RunTest(t *testing.T, tc TestCase) {
 			Reader: &bytes.Buffer{},
 			Writer: &bytes.Buffer{},
 		}
-		jr, err := jsh.NewEngine(conf)
+		jr, err := engine.New(conf)
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Module)
+		jr.RegisterNativeModule("process", jr.Process)
 		jr.RegisterNativeModule("mqtt", Module)
 
 		if err := jr.Run(); err != nil {

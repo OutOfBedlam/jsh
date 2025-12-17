@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/OutOfBedlam/jsh/native/http"
 	"github.com/OutOfBedlam/jsh/native/mqtt"
 	"github.com/OutOfBedlam/jsh/native/readline"
@@ -30,10 +30,10 @@ func main() {
 	// split args and passthrough args at "--"
 	args, passthrough := argAndPassthrough(flag.Args())
 
-	conf := jsh.Config{}
+	conf := engine.Config{}
 	if *scf != "" {
 		// when it starts with "-s", read secret box
-		if err := jsh.ReadSecretBox(*scf, &conf); err != nil {
+		if err := engine.ReadSecretBox(*scf, &conf); err != nil {
 			fmt.Println("Error reading secret file:", err.Error())
 			os.Exit(1)
 		}
@@ -46,12 +46,12 @@ func main() {
 			conf.Args = append([]string{args[0]}, passthrough...)
 		}
 	}
-	engine, err := jsh.NewEngine(conf)
+	engine, err := engine.New(conf)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	engine.RegisterNativeModule("process", engine.Module)
+	engine.RegisterNativeModule("process", engine.Process)
 	engine.RegisterNativeModule("shell", shell.Module)
 	engine.RegisterNativeModule("readline", readline.Module)
 	engine.RegisterNativeModule("http", http.Module)

@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/dop251/goja"
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
@@ -69,7 +69,7 @@ func ParseConfig(data string) (*autopaho.ClientConfig, error) {
 	return ret, nil
 }
 
-func NewClient(obj *goja.Object, dispatch jsh.EventDispatchFunc) (*Client, error) {
+func NewClient(obj *goja.Object, dispatch engine.EventDispatchFunc) (*Client, error) {
 	ret := &Client{}
 	ret.ctx, ret.cancel = context.WithCancel(context.Background())
 	ret.emit = func(event string, data any) {

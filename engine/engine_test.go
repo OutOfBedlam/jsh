@@ -1,4 +1,4 @@
-package jsh
+package engine
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		conf := Config{
 			Name: tc.name,
 			Code: tc.script,
-			Dir:  "./test/",
+			Dir:  "../test/",
 			Env: map[string]any{
 				"PATH": "/work:/sbin",
 				"PWD":  "/work",
@@ -35,11 +35,11 @@ func RunTest(t *testing.T, tc TestCase) {
 			Writer:      &bytes.Buffer{},
 			ExecBuilder: testExecBuilder,
 		}
-		jr, err := NewEngine(conf)
+		jr, err := New(conf)
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Module)
+		jr.RegisterNativeModule("process", jr.Process)
 		conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, "\n") + "\n")
 
 		if tc.preTest != nil {
@@ -68,21 +68,21 @@ func RunTest(t *testing.T, tc TestCase) {
 var testExecBuilder ExecBuilderFunc
 
 func TestMain(m *testing.M) {
-	cmd := exec.Command("go", "build", "-o", "./tmp/jsh", "./cmd/jsh")
+	cmd := exec.Command("go", "build", "-o", "../tmp/jsh", "..")
 	if err := cmd.Run(); err != nil {
 		fmt.Println("Failed to build jsh binary for tests:", err)
 		os.Exit(2)
 	}
 	testExecBuilder = func(source string, args []string) (*exec.Cmd, error) {
-		bin := "./tmp/jsh"
+		bin := "../tmp/jsh"
 		if source != "" {
 			args = append([]string{
-				"-d", "./test/",
+				"-d", "../test/",
 				"-c", source,
 				"--"}, args...)
 		} else {
 			args = append([]string{
-				"-d", "./test/",
+				"-d", "../test/",
 				args[0],
 				"--"}, args[1:]...)
 		}

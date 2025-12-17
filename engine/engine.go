@@ -1,4 +1,4 @@
-package jsh
+package engine
 
 import (
 	_ "embed"
@@ -107,7 +107,7 @@ type Exit struct {
 	Code int
 }
 
-func (jr *JSRuntime) Module(vm *goja.Runtime, module *goja.Object) {
+func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 	exports := module.Get("exports").(*goja.Object)
 	exports.Set("env", jr.Env)
 	exports.Set("args", jr.Args)

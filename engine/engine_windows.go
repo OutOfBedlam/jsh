@@ -1,6 +1,6 @@
 //go:build windows
 
-package jsh
+package engine
 
 import (
 	"os/exec"

@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/OutOfBedlam/jsh"
+	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/dop251/goja"
 	"github.com/gorilla/websocket"
 )
@@ -27,7 +27,7 @@ func Module(rt *goja.Runtime, module *goja.Object) {
 	rt.Set("module", goja.Undefined())
 }
 
-func NewNativeWebSocket(obj *goja.Object, url string, dispatch jsh.EventDispatchFunc) *WebSocket {
+func NewNativeWebSocket(obj *goja.Object, url string, dispatch engine.EventDispatchFunc) *WebSocket {
 	return &WebSocket{
 		obj: obj,
 		url: url,

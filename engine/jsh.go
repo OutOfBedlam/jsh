@@ -1,4 +1,4 @@
-package jsh
+package engine
 
 import (
 	"crypto/rand"
@@ -17,7 +17,7 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 )
 
-func NewEngine(conf Config) (*JSRuntime, error) {
+func New(conf Config) (*JSRuntime, error) {
 	fileSystem := NewFS()
 	fileSystem.Mount("/", Root(conf.Dev))
 

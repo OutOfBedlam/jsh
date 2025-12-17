@@ -1,6 +1,6 @@
 //go:build linux || darwin
 
-package jsh
+package engine
 
 import (
 	"fmt"
