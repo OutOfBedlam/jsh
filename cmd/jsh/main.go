@@ -7,6 +7,7 @@ import (
 
 	"github.com/OutOfBedlam/jsh"
 	"github.com/OutOfBedlam/jsh/native/http"
+	"github.com/OutOfBedlam/jsh/native/mqtt"
 	"github.com/OutOfBedlam/jsh/native/readline"
 	"github.com/OutOfBedlam/jsh/native/shell"
 	"github.com/OutOfBedlam/jsh/native/ws"
@@ -55,6 +56,8 @@ func main() {
 	engine.RegisterNativeModule("readline", readline.Module)
 	engine.RegisterNativeModule("http", http.Module)
 	engine.RegisterNativeModule("ws", ws.Module)
+	engine.RegisterNativeModule("mqtt", mqtt.Module)
+
 	os.Exit(engine.Main())
 }
 

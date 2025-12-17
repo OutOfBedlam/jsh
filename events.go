@@ -20,11 +20,13 @@ func NewEventLoop(opts ...eventloop.Option) *eventloop.EventLoop {
 	return loop
 }
 
-type EventDispatchFunc func(obj *goja.Object, event string, args ...any)
+// EventDispatchFunc
+// returns false if the event loop is already terminated.
+type EventDispatchFunc func(obj *goja.Object, event string, args ...any) bool
 
 func dispatchEvent(loop *eventloop.EventLoop) EventDispatchFunc {
-	return func(obj *goja.Object, event string, args ...any) {
-		loop.RunOnLoop(func(vm *goja.Runtime) {
+	return func(obj *goja.Object, event string, args ...any) bool {
+		return loop.RunOnLoop(func(vm *goja.Runtime) {
 			values := make([]goja.Value, len(args))
 			for i, a := range args {
 				values[i] = vm.ToValue(a)

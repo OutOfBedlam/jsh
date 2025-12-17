@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -106,6 +107,18 @@ func anyToPrintable(val any) any {
 		return val
 	case time.Time:
 		return val.Local().Format(time.DateTime)
+	case time.Duration:
+		return val.String()
+	case *url.URL:
+		return val.String()
+	case []*url.URL:
+		f := []string{}
+		for _, u := range val {
+			f = append(f, u.String())
+		}
+		return fmt.Sprintf("[%s]", strings.Join(f, ", "))
+	case *[]*url.URL:
+		return anyToPrintable(*val)
 	case *goja.Object:
 		toString, ok := goja.AssertFunction(val.Get("toString"))
 		if ok {
