@@ -2,6 +2,7 @@ package mach
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -45,7 +46,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
 		jr.RegisterNativeModule("process", jr.Process)
-		jr.RegisterNativeModule("mach", Module)
+		jr.RegisterNativeModule("machcli", Module)
 
 		if err := jr.Run(); err != nil {
 			if tc.err == "" || !strings.Contains(err.Error(), tc.err) {
@@ -68,11 +69,13 @@ func RunTest(t *testing.T, tc TestCase) {
 }
 
 func TestDatabase(t *testing.T) {
+	tick, _ := time.ParseInLocation(time.DateTime, "2025-12-17 16:49:28", time.Local)
+
 	tests := []TestCase{
 		{
 			name: "mach_exec",
 			script: `
-				const {Client} = require("mach");
+				const {Client} = require("machcli");
 				const conf = require("process").env.get("conf");
 				const tick = require("process").env.get("tick");
 				try {
@@ -98,7 +101,7 @@ func TestDatabase(t *testing.T) {
 		{
 			name: "mach_append",
 			script: `
-				const {Client} = require("mach");
+				const {Client} = require("machcli");
 				const {now} = require("process");
 				const conf = require("process").env.get("conf");
 				try {
@@ -125,7 +128,7 @@ func TestDatabase(t *testing.T) {
 		{
 			name: "mach_query_row",
 			script: `
-				const {Client} = require("mach");
+				const {Client} = require("machcli");
 				const conf = require("process").env.get("conf");
 				try {
 					db = new Client(conf);
@@ -146,7 +149,7 @@ func TestDatabase(t *testing.T) {
 		{
 			name: "mach_query",
 			script: `
-				const {Client} = require("mach");
+				const {Client} = require("machcli");
 				const conf = require("process").env.get("conf");
 				try {
 					db = new Client(conf);
@@ -165,13 +168,11 @@ func TestDatabase(t *testing.T) {
 				}
 			`,
 			output: []string{
-				"ROWNUM: 1 NAME: jsh TIME: 2025-12-17 16:49:28 VALUE: 123",
+				fmt.Sprintf("ROWNUM: 1 NAME: jsh TIME: %s VALUE: 123", tick.Local().Format(time.DateTime)),
 				"Select successfully.",
 			},
 		},
 	}
-
-	tick, _ := time.ParseInLocation(time.DateTime, "2025-12-17 16:49:28", time.Local)
 
 	for _, tc := range tests {
 		tc.vars = map[string]any{
