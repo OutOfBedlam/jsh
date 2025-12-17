@@ -99,13 +99,23 @@ func anyToPrintable(val any) any {
 		return fmt.Sprintf("%v(%T)", val, val)
 	case string:
 		return val
+	case *string:
+		return *val
+	case []string:
+		return fmt.Sprintf("[%s]", strings.Join(val, ", "))
 	case bool:
 		return val
 	case int64:
 		return val
+	case *int64:
+		return *val
 	case float64:
 		return val
+	case *float64:
+		return *val
 	case time.Time:
+		return val.Local().Format(time.DateTime)
+	case *time.Time:
 		return val.Local().Format(time.DateTime)
 	case time.Duration:
 		return val.String()
