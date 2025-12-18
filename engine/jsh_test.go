@@ -3,35 +3,9 @@ package engine
 import (
 	"bytes"
 	"os/exec"
-	"slices"
 	"strings"
 	"testing"
 )
-
-func TestArgPassthrough(t *testing.T) {
-	tests := []struct {
-		input               []string
-		expectedArgs        []string
-		expectedPassthrough []string
-	}{
-		{[]string{"script.js", "--", "arg1", "arg2"}, []string{"script.js"}, []string{"arg1", "arg2"}},
-		{[]string{"script.js", "--"}, []string{"script.js"}, []string{}},
-		{[]string{"script.js"}, []string{"script.js"}, []string{}},
-		{[]string{"script.js", "arg1", "arg2"}, []string{"script.js", "arg1", "arg2"}, []string{}},
-		{[]string{"--", "arg1", "arg2"}, []string{}, []string{"arg1", "arg2"}},
-		{[]string{}, []string{}, []string{}},
-	}
-
-	for _, tt := range tests {
-		args, passthrough := argAndPassthrough(tt.input)
-		if !slices.Equal(args, tt.expectedArgs) {
-			t.Errorf("For input %v, expected args %v, got %v", tt.input, tt.expectedArgs, args)
-		}
-		if !slices.Equal(passthrough, tt.expectedPassthrough) {
-			t.Errorf("For input %v, expected passthrough %v, got %v", tt.input, tt.expectedPassthrough, passthrough)
-		}
-	}
-}
 
 func TestJshMain(t *testing.T) {
 	tests := []struct {

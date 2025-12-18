@@ -7,7 +7,6 @@ import (
 
 	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/OutOfBedlam/jsh/native/http"
-	"github.com/OutOfBedlam/jsh/native/mach"
 	"github.com/OutOfBedlam/jsh/native/mqtt"
 	"github.com/OutOfBedlam/jsh/native/readline"
 	"github.com/OutOfBedlam/jsh/native/shell"
@@ -50,7 +49,6 @@ func main() {
 	}
 	engine.RegisterNativeModule("process", engine.Process)
 	engine.RegisterNativeModule("shell", shell.Module)
-	engine.RegisterNativeModule("machcli", mach.Module)
 	engine.RegisterNativeModule("readline", readline.Module)
 	engine.RegisterNativeModule("http", http.Module)
 	engine.RegisterNativeModule("ws", ws.Module)

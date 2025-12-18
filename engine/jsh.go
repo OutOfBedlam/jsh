@@ -188,21 +188,6 @@ func execBuilder(dir string, devDir string) ExecBuilderFunc {
 	}
 }
 
-// argAndPassthrough splits args into those before "--" and those after.
-func argAndPassthrough(args []string) (remains []string, passthrough []string) {
-	for i, arg := range args {
-		if arg == "--" {
-			if i+1 < len(args) {
-				passthrough = args[i+1:]
-			}
-			remains = args[:i]
-			return
-		}
-	}
-	remains = args
-	return
-}
-
 // checkFS checks that the given directory exists and is a directory, returning an fs.FS for it.
 func checkFS(dir string) (fileSystem fs.FS, err error) {
 	if dir == "" {
