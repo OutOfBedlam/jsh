@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/OutOfBedlam/jsh/log"
+	"github.com/OutOfBedlam/jsh/native/shell/internal"
 	"github.com/dop251/goja"
 	"github.com/hymkor/go-multiline-ny"
 	"github.com/hymkor/go-multiline-ny/completion"
@@ -104,10 +105,7 @@ func (sh *Shell) prompt(w io.Writer, lineNo int) (int, error) {
 }
 
 func (sh *Shell) submitOnEnterWhen(lines []string, i int) bool {
-	if strings.HasSuffix(lines[len(lines)-1], `\`) {
-		return false
-	}
-	return true
+	return !strings.HasSuffix(lines[len(lines)-1], `\`)
 }
 
 func (sh *Shell) getCompletionCandidates(fields []string) (forCompletion []string, forListing []string) {
@@ -125,25 +123,32 @@ func (sh *Shell) process(line string) (int, bool) {
 			stopOnError = true
 		}
 		for _, pipe := range stmt.Pipelines {
-			switch pipe.Command {
-			case "exit", "quit":
+			if pipe.Command == "exit" || pipe.Command == "quit" {
 				return 0, false
-			default:
+			}
+
+			// internal commands that execute in the SAME runtime instance
+			// others are executed via exec function on the separate runtime process.
+			var returnValue goja.Value
+			if v, ok := internal.Run(sh.rt, pipe.Command, pipe.Args...); ok {
+				returnValue = v
+			} else {
 				cmd := pipe.Command
 				if !strings.HasSuffix(cmd, ".js") {
 					cmd += ".js"
 				}
-				exitCode := -1
-				val := sh.exec(cmd, pipe.Args)
-				switch v := val.Export().(type) {
-				default:
-					log.Print(val.String())
-				case int64:
-					exitCode = int(v)
-				}
-				if exitCode != 0 && stopOnError {
-					return exitCode, true
-				}
+				returnValue = sh.exec(cmd, pipe.Args)
+			}
+
+			exitCode := -1
+			switch v := returnValue.Export().(type) {
+			default:
+				log.Print(returnValue.String())
+			case int64:
+				exitCode = int(v)
+			}
+			if exitCode != 0 && stopOnError {
+				return exitCode, true
 			}
 		}
 	}

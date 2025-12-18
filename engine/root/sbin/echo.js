@@ -1,5 +1,5 @@
 (() => {
-    const {args} = require('process');
+    const args = require('process').argv.slice(2);
     if (args.length === 0) {
         console.println();
         return;

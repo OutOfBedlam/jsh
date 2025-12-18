@@ -16,9 +16,9 @@ import (
 
 // JSH options:
 //  1. -c "script" : command to execute
-//     ex: jsh -c "console.print(`hello ${runtime.args[0]}`?)" -- world
+//     ex: jsh -c "console.println(require('process').argv[2])" helloworld
 //  2. script file : execute script file
-//     ex: jsh script.js -- arg1 arg2
+//     ex: jsh script.js arg1 arg2
 //  3. no args : start interactive shell
 //     ex: jsh
 func main() {
@@ -27,9 +27,6 @@ func main() {
 	scf := flag.String("s", "", "configured file to start from")
 	dev := flag.String("dev", "", "use development filesystem")
 	flag.Parse()
-
-	// split args and passthrough args at "--"
-	args, passthrough := argAndPassthrough(flag.Args())
 
 	conf := engine.Config{}
 	if *scf != "" {
@@ -43,9 +40,8 @@ func main() {
 		conf.Code = *src
 		conf.Dir = *dir
 		conf.Dev = *dev
-		if len(args) > 0 {
-			conf.Args = append([]string{args[0]}, passthrough...)
-		}
+		conf.Args = flag.Args()
+		conf.Default = "/sbin/shell.js" // default script to run if no args
 	}
 	engine, err := engine.New(conf)
 	if err != nil {
@@ -61,19 +57,4 @@ func main() {
 	engine.RegisterNativeModule("mqtt", mqtt.Module)
 
 	os.Exit(engine.Main())
-}
-
-// argAndPassthrough splits args into those before "--" and those after.
-func argAndPassthrough(args []string) (remains []string, passthrough []string) {
-	for i, arg := range args {
-		if arg == "--" {
-			if i+1 < len(args) {
-				passthrough = args[i+1:]
-			}
-			remains = args[:i]
-			return
-		}
-	}
-	remains = args
-	return
 }

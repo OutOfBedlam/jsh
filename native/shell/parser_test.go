@@ -729,3 +729,202 @@ func redirectEqual(a, b *Redirect) bool {
 	}
 	return a.Type == b.Type && a.Target == b.Target
 }
+
+// TestParseCommand_Unicode tests parsing of Unicode characters including Korean
+func TestParseCommand_Unicode(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected *Command
+	}{
+		{
+			name:  "Korean characters in argument",
+			input: `echo "안녕하세요"`,
+			expected: &Command{
+				Raw: `echo "안녕하세요"`,
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"안녕하세요"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Korean characters without quotes",
+			input: "echo 안녕하세요",
+			expected: &Command{
+				Raw: "echo 안녕하세요",
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"안녕하세요"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Korean filename in redirection",
+			input: "cat < 한글파일.txt",
+			expected: &Command{
+				Raw: "cat < 한글파일.txt",
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "cat",
+								Args:    []string{},
+								Stdin: &Redirect{
+									Type:   "<",
+									Target: "한글파일.txt",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Korean with pipe",
+			input: `echo "안녕" | grep 안녕`,
+			expected: &Command{
+				Raw: `echo "안녕" | grep 안녕`,
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"안녕"},
+							},
+							{
+								Command: "grep",
+								Args:    []string{"안녕"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Korean with semicolon separator",
+			input: "echo 첫번째; echo 두번째",
+			expected: &Command{
+				Raw: "echo 첫번째; echo 두번째",
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"첫번째"},
+							},
+						},
+						Operator: ";",
+					},
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"두번째"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Mixed Korean and English",
+			input: `echo "Hello 세계"`,
+			expected: &Command{
+				Raw: `echo "Hello 세계"`,
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"Hello 세계"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Japanese characters",
+			input: `echo "こんにちは"`,
+			expected: &Command{
+				Raw: `echo "こんにちは"`,
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"こんにちは"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Chinese characters",
+			input: `echo "你好世界"`,
+			expected: &Command{
+				Raw: `echo "你好世界"`,
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"你好世界"},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:  "Emoji characters",
+			input: `echo "Hello 👋 World 🌍"`,
+			expected: &Command{
+				Raw: `echo "Hello 👋 World 🌍"`,
+				Statements: []*Statement{
+					{
+						Pipelines: []*Pipeline{
+							{
+								Command: "echo",
+								Args:    []string{"Hello 👋 World 🌍"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := parseCommand(tt.input)
+			if !commandEqual(result, tt.expected) {
+				t.Errorf("parseCommand(%q) failed", tt.input)
+				t.Errorf("  Got:  %+v", result)
+				t.Errorf("  Want: %+v", tt.expected)
+				if len(result.Statements) > 0 && len(result.Statements[0].Pipelines) > 0 {
+					gotPipeline := result.Statements[0].Pipelines[0]
+					expPipeline := tt.expected.Statements[0].Pipelines[0]
+					if len(gotPipeline.Args) > 0 && len(expPipeline.Args) > 0 {
+						t.Errorf("  Got Args[0]:  %q (bytes: %v)", gotPipeline.Args[0], []byte(gotPipeline.Args[0]))
+						t.Errorf("  Want Args[0]: %q (bytes: %v)", expPipeline.Args[0], []byte(expPipeline.Args[0]))
+					}
+				}
+			}
+		})
+	}
+}

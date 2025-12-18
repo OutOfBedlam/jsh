@@ -1,4 +1,5 @@
 const {sayHello} = require("demo");
-const {args} = require("process");
+const {argv} = require("process");
+const args = argv.slice(2);
 
 sayHello(args[0]);

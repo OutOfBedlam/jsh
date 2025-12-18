@@ -46,7 +46,12 @@ type Database struct {
 }
 
 func NewDatabase(data string) (*Database, error) {
-	obj := Config{}
+	obj := Config{
+		Host:     "127.0.0.1",
+		Port:     5656,
+		User:     "sys",
+		Password: "manager",
+	} // default values
 	if err := json.Unmarshal([]byte(data), &obj); err != nil {
 		return nil, err
 	}

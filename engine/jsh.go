@@ -50,6 +50,7 @@ func New(conf Config) (*JSRuntime, error) {
 	}
 	env := NewEnv(opts...)
 	env.Set("PATH", "/work:/sbin")
+	env.Set("HOME", "/work")
 	env.Set("PWD", "/work")
 	for k, v := range conf.Env {
 		env.Set(k, v)
@@ -68,9 +69,9 @@ func New(conf Config) (*JSRuntime, error) {
 		}
 		if cmd == "" {
 			// No command or script file provided
-			// start shell
-			b, _ := LoadSource(env, "/sbin/shell.js")
-			scriptName = "shell.js"
+			// start default command
+			b, _ := LoadSource(env, conf.Default)
+			scriptName = conf.Default
 			script = string(b)
 		} else {
 			b, err := LoadSource(env, cmd)
@@ -145,7 +146,7 @@ func Root(devDir string) fs.FS {
 // execBuilder builds an exec.Cmd to run jsh with the given code and args.
 func execBuilder(dir string, devDir string) ExecBuilderFunc {
 	useSecretBox := os.Getenv("JSH_NO_SECRET_BOX") != "1"
-	return func(code string, args []string) (*exec.Cmd, error) {
+	return func(code string, args []string, env map[string]any) (*exec.Cmd, error) {
 		self, err := os.Executable()
 		if err != nil {
 			return nil, err
@@ -158,7 +159,7 @@ func execBuilder(dir string, devDir string) ExecBuilderFunc {
 				Args: args,
 				Dir:  dir,
 				Dev:  devDir,
-				Env:  map[string]any{},
+				Env:  env,
 			}
 			secretBox, err := NewSecretBox(conf)
 			if err != nil {
@@ -174,13 +175,11 @@ func execBuilder(dir string, devDir string) ExecBuilderFunc {
 			if code != "" {
 				opts = append(opts, "-c", code, "-d", dir)
 				if len(args) > 0 {
-					opts = append(opts, "--")
 					opts = append(opts, args...)
 				}
 			} else {
 				opts = append(opts, "-d", dir, args[0])
 				if args := args[1:]; len(args) > 0 {
-					opts = append(opts, "--")
 					opts = append(opts, args...)
 				}
 			}
@@ -235,6 +234,7 @@ type Config struct {
 	Dir  string         `json:"dir"`
 	Dev  string         `json:"dev"`
 
+	Default     string          `json:"default,omitempty"`
 	Writer      io.Writer       `json:"-"`
 	Reader      io.Reader       `json:"-"`
 	ExecBuilder ExecBuilderFunc `json:"-"`

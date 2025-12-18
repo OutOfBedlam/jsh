@@ -24,7 +24,7 @@ type Env interface {
 // ExecBuilderFunc is a function that builds an *exec.Cmd given the source and arguments.
 // if code is empty, it indicates that the file is being executed from file named in args[0].
 // if code is non-empty, it indicates that the code is being executed.
-type ExecBuilderFunc func(code string, args []string) (*exec.Cmd, error)
+type ExecBuilderFunc func(code string, args []string, env map[string]any) (*exec.Cmd, error)
 
 func LoadSource(env Env, moduleName string) ([]byte, error) {
 	var fileSystem fs.FS = env.Filesystem()

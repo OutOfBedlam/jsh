@@ -48,13 +48,13 @@ func TestJshMain(t *testing.T) {
 		},
 		{
 			name:           "hello_with_args",
-			args:           []string{"hello", "--", "world"},
+			args:           []string{"hello", "world"},
 			stdinInput:     "",
 			expectedOutput: []string{"Hello world from demo.js!"},
 		},
 		{
 			name:           "sbin_echo",
-			args:           []string{"echo", "--", "Hello, Echo?"},
+			args:           []string{"echo", "Hello, Echo?"},
 			stdinInput:     "",
 			expectedOutput: []string{"Hello, Echo?"},
 		},
@@ -66,7 +66,7 @@ func TestJshMain(t *testing.T) {
 		},
 		{
 			name:       "optparse",
-			args:       []string{"optparse", "--", "-v", "-h"},
+			args:       []string{"optparse", "-v", "-h"},
 			stdinInput: "",
 			expectedOutput: []string{
 				"command version 0.1.0",

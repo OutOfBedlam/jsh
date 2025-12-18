@@ -86,8 +86,6 @@ func (jr *JSRuntime) exec0(vm *goja.Runtime, ex *exec.Cmd) goja.Value {
 			uintptr(unsafe.Pointer(&shellPgid)))
 		if err != 0 {
 			fmt.Printf("failed to restore foreground: %v\n", err)
-		} else {
-			fmt.Println()
 		}
 	}
 	return result

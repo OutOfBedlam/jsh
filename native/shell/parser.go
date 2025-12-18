@@ -132,13 +132,15 @@ func splitStatements(input string) []string {
 	var current strings.Builder
 	inQuote := false
 	quoteChar := rune(0)
+	var prevCh rune
 
-	for i := 0; i < len(input); i++ {
-		ch := rune(input[i])
+	runes := []rune(input)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
 
 		// Track quote state to avoid splitting within quoted strings
 		// Quotes are considered delimiters only if not escaped with backslash
-		if (ch == '"' || ch == '\'') && (i == 0 || input[i-1] != '\\') {
+		if (ch == '"' || ch == '\'') && prevCh != '\\' {
 			if !inQuote {
 				inQuote = true
 				quoteChar = ch
@@ -147,18 +149,20 @@ func splitStatements(input string) []string {
 				quoteChar = 0
 			}
 			current.WriteRune(ch)
+			prevCh = ch
 			continue
 		}
 
 		// Process operators only when outside quoted strings
 		if !inQuote {
 			// Check for logical AND operator (&&)
-			if ch == '&' && i+1 < len(input) && input[i+1] == '&' {
+			if ch == '&' && i+1 < len(runes) && runes[i+1] == '&' {
 				if current.Len() > 0 {
 					result = append(result, strings.TrimSpace(current.String()))
 					current.Reset()
 				}
 				i++ // Skip next & character
+				prevCh = ch
 				continue
 			}
 
@@ -168,11 +172,13 @@ func splitStatements(input string) []string {
 					result = append(result, strings.TrimSpace(current.String()))
 					current.Reset()
 				}
+				prevCh = ch
 				continue
 			}
 		}
 
 		current.WriteRune(ch)
+		prevCh = ch
 	}
 
 	// Append any remaining content as the last statement
@@ -200,12 +206,14 @@ func splitPipes(input string) []string {
 	var current strings.Builder
 	inQuote := false
 	quoteChar := rune(0)
+	var prevCh rune
 
-	for i := 0; i < len(input); i++ {
-		ch := rune(input[i])
+	runes := []rune(input)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
 
 		// Track quote state to preserve pipe characters within quotes
-		if (ch == '"' || ch == '\'') && (i == 0 || input[i-1] != '\\') {
+		if (ch == '"' || ch == '\'') && prevCh != '\\' {
 			if !inQuote {
 				inQuote = true
 				quoteChar = ch
@@ -214,6 +222,7 @@ func splitPipes(input string) []string {
 				quoteChar = 0
 			}
 			current.WriteRune(ch)
+			prevCh = ch
 			continue
 		}
 
@@ -223,10 +232,12 @@ func splitPipes(input string) []string {
 				result = append(result, strings.TrimSpace(current.String()))
 				current.Reset()
 			}
+			prevCh = ch
 			continue
 		}
 
 		current.WriteRune(ch)
+		prevCh = ch
 	}
 
 	// Append any remaining content as the last pipeline command
@@ -326,13 +337,15 @@ func tokenize(input string) []string {
 	var current strings.Builder
 	inQuote := false
 	quoteChar := rune(0)
+	var prevCh rune
 
-	for i := 0; i < len(input); i++ {
-		ch := rune(input[i])
+	runes := []rune(input)
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
 
 		// Track quote boundaries and exclude quote characters from the token
 		// Quotes must not be escaped with backslash to be treated as delimiters
-		if (ch == '"' || ch == '\'') && (i == 0 || input[i-1] != '\\') {
+		if (ch == '"' || ch == '\'') && prevCh != '\\' {
 			if !inQuote {
 				inQuote = true
 				quoteChar = ch
@@ -340,6 +353,7 @@ func tokenize(input string) []string {
 				inQuote = false
 				quoteChar = 0
 			}
+			prevCh = ch
 			continue // Quote chars are not included in the resulting token
 		}
 
@@ -349,19 +363,21 @@ func tokenize(input string) []string {
 				tokens = append(tokens, current.String())
 				current.Reset()
 			}
+			prevCh = ch
 			continue
 		}
 
 		// Extract redirection operators as separate tokens when outside quotes
 		if !inQuote {
 			// Check for append redirection operator (>>)
-			if ch == '>' && i+1 < len(input) && input[i+1] == '>' {
+			if ch == '>' && i+1 < len(runes) && runes[i+1] == '>' {
 				if current.Len() > 0 {
 					tokens = append(tokens, current.String())
 					current.Reset()
 				}
 				tokens = append(tokens, ">>")
 				i++ // Skip the next > character
+				prevCh = ch
 				continue
 			}
 
@@ -372,11 +388,13 @@ func tokenize(input string) []string {
 					current.Reset()
 				}
 				tokens = append(tokens, string(ch))
+				prevCh = ch
 				continue
 			}
 		}
 
 		current.WriteRune(ch)
+		prevCh = ch
 	}
 
 	// Append any remaining content as the last token

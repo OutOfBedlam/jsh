@@ -87,10 +87,7 @@ func (repl *Repl) prompt(w io.Writer, lineNo int) (int, error) {
 var replCommandRegex = regexp.MustCompile(`^\\([a-zA-Z]+)(\s+.*)?$`)
 
 func (repl *Repl) submitOnEnterWhen(lines []string, lineNo int) bool {
-	if replCommandRegex.MatchString(lines[lineNo]) {
-		return true
-	}
-	return false
+	return replCommandRegex.MatchString(lines[lineNo])
 }
 
 func (repl *Repl) println(vals ...goja.Value) {

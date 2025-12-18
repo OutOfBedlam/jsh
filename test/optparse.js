@@ -1,5 +1,6 @@
 var optparse = require('optparse');
-var {args} = require('process');
+var {argv} = require('process');
+var args = argv.slice(2);
 
 var SWITCHES = [
     ['-h', '--help', 'Show this help message'],

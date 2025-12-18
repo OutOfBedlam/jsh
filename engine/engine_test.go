@@ -73,18 +73,17 @@ func TestMain(m *testing.M) {
 		fmt.Println("Failed to build jsh binary for tests:", err)
 		os.Exit(2)
 	}
-	testExecBuilder = func(source string, args []string) (*exec.Cmd, error) {
+	testExecBuilder = func(source string, args []string, env map[string]any) (*exec.Cmd, error) {
 		bin := "../tmp/jsh"
 		if source != "" {
 			args = append([]string{
 				"-d", "../test/",
 				"-c", source,
-				"--"}, args...)
+			}, args...)
 		} else {
 			args = append([]string{
 				"-d", "../test/",
-				args[0],
-				"--"}, args[1:]...)
+			}, args...)
 		}
 		return exec.Command(bin, args...), nil
 	}
@@ -359,7 +358,7 @@ func TestExec(t *testing.T) {
 			name: "runtime_exec_string_arg",
 			script: `
 				const {execString} = require('process');
-				execString("const {args} = require('process'); console.log('Hello '+args[0])", "World");
+				execString("const {argv} = require('process'); console.log('Hello '+argv[2])", "World");
 			`,
 			output: []string{
 				"INFO  Hello World",

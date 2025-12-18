@@ -1,4 +1,5 @@
 const {WebSocket} = require('@jsh/ws');
+const args = require('process').argv.slice(2);
 
 let u = runtime.args[0];
 if (!u) {

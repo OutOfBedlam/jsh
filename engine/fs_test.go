@@ -3,8 +3,10 @@ package engine
 import (
 	"io"
 	"io/fs"
+	"os"
 	"testing"
 	"testing/fstest"
+	"time"
 )
 
 func TestFS_NewFS(t *testing.T) {
@@ -277,11 +279,11 @@ func TestFS_ReadDir(t *testing.T) {
 	tests := []struct {
 		name      string
 		path      string
-		wantCount int
+		wantCount int // Now includes . and ..
 		wantErr   bool
 	}{
-		{"read dir", "/mount/dir", 3, false},
-		{"read subdir", "/mount/dir/subdir", 1, false},
+		{"read dir", "/mount/dir", 5, false},           // file1.txt, file2.txt, subdir, ., ..
+		{"read subdir", "/mount/dir/subdir", 3, false}, // file3.txt, ., ..
 		{"non-existent dir", "/mount/nonexistent", 0, true},
 		{"non-existent mount", "/nomount/dir", 0, true},
 	}
@@ -340,6 +342,336 @@ func TestFS_Interface(t *testing.T) {
 
 	// Verify it implements fs.ReadDirFS
 	var _ fs.ReadDirFS = mfs
+}
+
+func TestFS_ReadDir_DotEntries(t *testing.T) {
+	testFS := fstest.MapFS{
+		"file1.txt": &fstest.MapFile{Data: []byte("content1")},
+		"file2.txt": &fstest.MapFile{Data: []byte("content2")},
+	}
+
+	mfs := NewFS()
+	if err := mfs.Mount("/test", testFS); err != nil {
+		t.Fatalf("Mount failed: %v", err)
+	}
+
+	entries, err := mfs.ReadDir("/test")
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	// Should have: file1.txt, file2.txt, ., ..
+	if len(entries) < 4 {
+		t.Errorf("Expected at least 4 entries (including . and ..), got %d", len(entries))
+	}
+
+	// Check for . and .. entries
+	hasDot := false
+	hasDotDot := false
+	for _, entry := range entries {
+		if entry.Name() == "." {
+			hasDot = true
+			if !entry.IsDir() {
+				t.Error(". entry should be a directory")
+			}
+		}
+		if entry.Name() == ".." {
+			hasDotDot = true
+			if !entry.IsDir() {
+				t.Error(".. entry should be a directory")
+			}
+		}
+	}
+
+	if !hasDot {
+		t.Error("Missing . entry in directory listing")
+	}
+	if !hasDotDot {
+		t.Error("Missing .. entry in directory listing")
+	}
+}
+
+func TestFS_ReadDir_MountPoints(t *testing.T) {
+	rootFS := fstest.MapFS{
+		"rootfile.txt": &fstest.MapFile{Data: []byte("root")},
+	}
+	binFS := fstest.MapFS{
+		"ls": &fstest.MapFile{Data: []byte("binary")},
+	}
+	sbinFS := fstest.MapFS{
+		"init": &fstest.MapFile{Data: []byte("init")},
+	}
+	usrFS := fstest.MapFS{
+		"readme.txt": &fstest.MapFile{Data: []byte("usr")},
+	}
+
+	mfs := NewFS()
+	if err := mfs.Mount("/", rootFS); err != nil {
+		t.Fatalf("Mount / failed: %v", err)
+	}
+	if err := mfs.Mount("/bin", binFS); err != nil {
+		t.Fatalf("Mount /bin failed: %v", err)
+	}
+	if err := mfs.Mount("/sbin", sbinFS); err != nil {
+		t.Fatalf("Mount /sbin failed: %v", err)
+	}
+	if err := mfs.Mount("/usr", usrFS); err != nil {
+		t.Fatalf("Mount /usr failed: %v", err)
+	}
+
+	// Read root directory
+	entries, err := mfs.ReadDir("/")
+	if err != nil {
+		t.Fatalf("ReadDir(/) failed: %v", err)
+	}
+
+	// Should have: rootfile.txt, ., .., bin, sbin, usr
+	expectedNames := map[string]bool{
+		"rootfile.txt": false,
+		".":            false,
+		"..":           false,
+		"bin":          false,
+		"sbin":         false,
+		"usr":          false,
+	}
+
+	for _, entry := range entries {
+		if _, exists := expectedNames[entry.Name()]; exists {
+			expectedNames[entry.Name()] = true
+			// Mounted directories should appear as directories
+			if entry.Name() == "bin" || entry.Name() == "sbin" || entry.Name() == "usr" {
+				if !entry.IsDir() {
+					t.Errorf("%s should be a directory", entry.Name())
+				}
+			}
+		}
+	}
+
+	for name, found := range expectedNames {
+		if !found {
+			t.Errorf("Expected to find %s in root directory listing", name)
+		}
+	}
+}
+
+func TestFS_ReadDir_NestedMountPoints(t *testing.T) {
+	rootFS := fstest.MapFS{
+		"file.txt": &fstest.MapFile{Data: []byte("root")},
+	}
+	usrFS := fstest.MapFS{
+		"readme.txt": &fstest.MapFile{Data: []byte("usr")},
+	}
+	usrLocalFS := fstest.MapFS{
+		"local.txt": &fstest.MapFile{Data: []byte("local")},
+	}
+
+	mfs := NewFS()
+	if err := mfs.Mount("/", rootFS); err != nil {
+		t.Fatalf("Mount / failed: %v", err)
+	}
+	if err := mfs.Mount("/usr", usrFS); err != nil {
+		t.Fatalf("Mount /usr failed: %v", err)
+	}
+
+	// This should fail due to conflict (parent-child relationship)
+	err := mfs.Mount("/usr/local", usrLocalFS)
+	if err == nil {
+		t.Fatal("Expected mount to fail due to parent-child conflict")
+	}
+}
+
+func TestFS_ReadDir_NoDuplicateMountPoints(t *testing.T) {
+	rootFS := fstest.MapFS{
+		"bin/file.txt": &fstest.MapFile{Data: []byte("original")},
+	}
+	binFS := fstest.MapFS{
+		"ls": &fstest.MapFile{Data: []byte("binary")},
+	}
+
+	mfs := NewFS()
+	if err := mfs.Mount("/", rootFS); err != nil {
+		t.Fatalf("Mount / failed: %v", err)
+	}
+
+	// This should fail because /bin would conflict with existing bin in rootFS
+	// Actually, this will succeed but let's test that we don't get duplicate "bin" entries
+	err := mfs.Mount("/bin", binFS)
+	if err != nil {
+		// If it fails, that's fine - conflict detection
+		t.Logf("Mount /bin failed as expected: %v", err)
+		return
+	}
+
+	// Read root directory
+	entries, err := mfs.ReadDir("/")
+	if err != nil {
+		t.Fatalf("ReadDir(/) failed: %v", err)
+	}
+
+	// Count "bin" entries - should only have one
+	binCount := 0
+	for _, entry := range entries {
+		if entry.Name() == "bin" {
+			binCount++
+		}
+	}
+
+	if binCount != 1 {
+		t.Errorf("Expected exactly 1 'bin' entry, got %d", binCount)
+	}
+}
+
+func TestFS_ReadDir_DotEntriesInfo(t *testing.T) {
+	testFS := fstest.MapFS{
+		"file.txt": &fstest.MapFile{Data: []byte("content")},
+	}
+
+	mfs := NewFS()
+	if err := mfs.Mount("/test", testFS); err != nil {
+		t.Fatalf("Mount failed: %v", err)
+	}
+
+	entries, err := mfs.ReadDir("/test")
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.Name() == "." || entry.Name() == ".." {
+			// Test Info() method
+			info, err := entry.Info()
+			if err != nil {
+				t.Errorf("Info() failed for %s: %v", entry.Name(), err)
+				continue
+			}
+
+			if info.Name() != entry.Name() {
+				t.Errorf("Info().Name() = %s, want %s", info.Name(), entry.Name())
+			}
+
+			if !info.IsDir() {
+				t.Errorf("%s should be a directory", entry.Name())
+			}
+
+			if info.Mode()&fs.ModeDir == 0 {
+				t.Errorf("%s Mode() should have ModeDir bit set", entry.Name())
+			}
+
+			// Test Type() method
+			if entry.Type()&fs.ModeDir == 0 {
+				t.Errorf("%s Type() should have ModeDir bit set", entry.Name())
+			}
+		}
+	}
+}
+
+func TestFS_ReadDir_DotEntriesRealInfo(t *testing.T) {
+	// Create a filesystem with known ModTime
+	modTime := time.Date(2025, 12, 18, 10, 30, 0, 0, time.UTC)
+	testFS := fstest.MapFS{
+		"dir/file.txt": &fstest.MapFile{
+			Data:    []byte("content"),
+			ModTime: modTime,
+		},
+	}
+
+	mfs := NewFS()
+	if err := mfs.Mount("/test", testFS); err != nil {
+		t.Fatalf("Mount failed: %v", err)
+	}
+
+	entries, err := mfs.ReadDir("/test/dir")
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	foundDot := false
+	foundDotDot := false
+
+	for _, entry := range entries {
+		if entry.Name() == "." {
+			foundDot = true
+			info, err := entry.Info()
+			if err != nil {
+				t.Fatalf("Info() failed for '.': %v", err)
+			}
+
+			// Check that info is accessible
+			_ = info.Size()
+			_ = info.ModTime()
+
+			// fstest.MapFS may not provide directory metadata,
+			// but the code should handle this gracefully
+			t.Logf("'.' entry: Size=%d, ModTime=%v", info.Size(), info.ModTime())
+		}
+
+		if entry.Name() == ".." {
+			foundDotDot = true
+			info, err := entry.Info()
+			if err != nil {
+				t.Fatalf("Info() failed for '..': %v", err)
+			}
+
+			// Check that info is accessible
+			_ = info.Size()
+			_ = info.ModTime()
+
+			t.Logf("'..' entry: Size=%d, ModTime=%v", info.Size(), info.ModTime())
+		}
+	}
+
+	if !foundDot {
+		t.Error("'.' entry not found")
+	}
+	if !foundDotDot {
+		t.Error("'..' entry not found")
+	}
+}
+
+func TestFS_ReadDir_DotEntriesRealInfo_OS(t *testing.T) {
+	// Use OS filesystem to verify real directory info
+	testDir := t.TempDir()
+	osFS := os.DirFS(testDir)
+
+	mfs := NewFS()
+	if err := mfs.Mount("/test", osFS); err != nil {
+		t.Fatalf("Mount failed: %v", err)
+	}
+
+	entries, err := mfs.ReadDir("/test")
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.Name() == "." {
+			info, err := entry.Info()
+			if err != nil {
+				t.Fatalf("Info() failed for '.': %v", err)
+			}
+
+			// With real OS filesystem, ModTime should be set
+			if info.ModTime().IsZero() {
+				t.Error("'.' entry should have non-zero ModTime from actual OS directory")
+			}
+
+			t.Logf("'.' entry (OS): Size=%d, ModTime=%v", info.Size(), info.ModTime())
+		}
+
+		if entry.Name() == ".." {
+			info, err := entry.Info()
+			if err != nil {
+				t.Fatalf("Info() failed for '..': %v", err)
+			}
+
+			// Parent directory should also have ModTime set with real OS
+			if info.ModTime().IsZero() {
+				t.Error("'..' entry should have non-zero ModTime from parent OS directory")
+			}
+
+			t.Logf("'..' entry (OS): Size=%d, ModTime=%v", info.Size(), info.ModTime())
+		}
+	}
 }
 
 func BenchmarkFS_Open(b *testing.B) {
