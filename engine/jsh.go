@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -49,7 +50,7 @@ func New(conf Config) (*JSRuntime, error) {
 		WithExecBuilder(execBuilderFunc),
 	}
 	env := NewEnv(opts...)
-	env.Set("PATH", "/work:/sbin")
+	env.Set("PATH", "/sbin:/lib:/work")
 	env.Set("HOME", "/work")
 	env.Set("PWD", "/work")
 	for k, v := range conf.Env {
@@ -74,6 +75,9 @@ func New(conf Config) (*JSRuntime, error) {
 			scriptName = conf.Default
 			script = string(b)
 		} else {
+			if !strings.HasSuffix(cmd, ".js") {
+				cmd = cmd + ".js"
+			}
 			b, err := LoadSource(env, cmd)
 			if err != nil {
 				return nil, fmt.Errorf("command not found: %s", cmd)
@@ -102,8 +106,8 @@ func New(conf Config) (*JSRuntime, error) {
 	}
 
 	jr.registry = require.NewRegistry(
-		require.WithGlobalFolders("node_modules"),
 		require.WithLoader(jr.loadSource),
+		require.WithPathResolver(jr.pathResolver),
 	)
 	jr.eventLoop = NewEventLoop(
 		eventloop.EnableConsole(false),

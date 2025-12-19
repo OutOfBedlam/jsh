@@ -18,7 +18,7 @@ func TestJshMain(t *testing.T) {
 			name:           "hello_with_no_args",
 			args:           []string{"hello"},
 			stdinInput:     "",
-			expectedOutput: []string{"Hello undefined from demo.js!"},
+			expectedOutput: []string{"Hello  from demo.js!"},
 		},
 		{
 			name:           "hello_with_args",

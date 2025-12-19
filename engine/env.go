@@ -39,14 +39,15 @@ func LoadSource(env Env, moduleName string) ([]byte, error) {
 			return b, nil
 		}
 	} else {
-		var paths []string
-		if v := env.Get("PATH"); v == nil {
-			paths = []string{""}
-		} else {
-			paths = strings.Split(v.(string), ":")
+		findings := []string{
+			moduleName,
 		}
-		for _, p := range paths {
-			path := filepath.Join(p, moduleName)
+		if v := env.Get("PATH"); v != nil {
+			for _, p := range strings.Split(v.(string), ":") {
+				findings = append(findings, filepath.Join(p, moduleName))
+			}
+		}
+		for _, path := range findings {
 			path = CleanPath(path)
 			b, err := loadSource(fileSystem, path)
 			if err == nil {

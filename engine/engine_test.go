@@ -28,7 +28,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			Code: tc.script,
 			Dir:  "../test/",
 			Env: map[string]any{
-				"PATH": "/work:/sbin",
+				"PATH": "/lib:/work:/sbin",
 				"PWD":  "/work",
 			},
 			Reader:      &bytes.Buffer{},
@@ -88,6 +88,35 @@ func TestMain(m *testing.M) {
 		return exec.Command(bin, args...), nil
 	}
 	os.Exit(m.Run())
+}
+
+func TestCleanPath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"foo", "/foo"},
+		{"/foo", "/foo"},
+		{"foo/", "/foo"},
+		{"/foo/", "/foo"},
+		{"foo/bar", "/foo/bar"},
+		{"/foo/bar/", "/foo/bar"},
+		{"foo//bar", "/foo/bar"},
+		{"foo/./bar", "/foo/bar"},
+		{"foo/../bar", "/bar"},
+		{"/", "/"},
+		{".", "/"},
+		{"", "/"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := CleanPath(tt.input)
+			if result != tt.expected {
+				t.Errorf("cleanPath(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
 }
 
 func TestJsh(t *testing.T) {
@@ -331,7 +360,7 @@ func TestExec(t *testing.T) {
 				exec("hello.js");
 			`,
 			output: []string{
-				"Hello undefined from demo.js!",
+				"Hello  from demo.js!",
 			},
 		},
 		{
@@ -362,6 +391,203 @@ func TestExec(t *testing.T) {
 			`,
 			output: []string{
 				"INFO  Hello World",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		RunTest(t, tc)
+	}
+}
+
+func TestUtilParseArgs(t *testing.T) {
+	testCases := []TestCase{
+		{
+			name: "util_parseArgs_basic",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['-f', '--bar', 'value', 'positional'], {
+					options: {
+						foo: { type: 'boolean', short: 'f' },
+						bar: { type: 'string' }
+					},
+					allowPositionals: true
+				});
+				console.println("Values:", JSON.stringify(result.values));
+				console.println("Positionals:", JSON.stringify(result.positionals));
+			`,
+			output: []string{
+				"Values: {\"foo\":true,\"bar\":\"value\"}",
+				"Positionals: [\"positional\"]",
+			},
+		},
+		{
+			name: "util_parseArgs_long_options",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['--verbose', '--output', 'file.txt'], {
+					options: {
+						verbose: { type: 'boolean' },
+						output: { type: 'string' }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"verbose\":true,\"output\":\"file.txt\"}",
+			},
+		},
+		{
+			name: "util_parseArgs_short_options",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['-v', '-o', 'out.txt'], {
+					options: {
+						verbose: { type: 'boolean', short: 'v' },
+						output: { type: 'string', short: 'o' }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"verbose\":true,\"output\":\"out.txt\"}",
+			},
+		},
+		{
+			name: "util_parseArgs_inline_value",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['--output=file.txt', '-o=out.txt'], {
+					options: {
+						output: { type: 'string', short: 'o' }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"output\":\"out.txt\"}",
+			},
+		},
+		{
+			name: "util_parseArgs_multiple",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['--include', 'a.js', '--include', 'b.js', '-I', 'c.js'], {
+					options: {
+						include: { type: 'string', short: 'I', multiple: true }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"include\":[\"a.js\",\"b.js\",\"c.js\"]}",
+			},
+		},
+		{
+			name: "util_parseArgs_default_values",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['--foo'], {
+					options: {
+						foo: { type: 'boolean' },
+						bar: { type: 'string', default: 'default_value' },
+						count: { type: 'string', default: '0' }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"bar\":\"default_value\",\"count\":\"0\",\"foo\":true}",
+			},
+		},
+		{
+			name: "util_parseArgs_short_group",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['-abc'], {
+					options: {
+						a: { type: 'boolean', short: 'a' },
+						b: { type: 'boolean', short: 'b' },
+						c: { type: 'boolean', short: 'c' }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"a\":true,\"b\":true,\"c\":true}",
+			},
+		},
+		{
+			name: "util_parseArgs_terminator",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['--foo', '--', '--bar', 'baz'], {
+					options: {
+						foo: { type: 'boolean' },
+						bar: { type: 'boolean' }
+					},
+					allowPositionals: true
+				});
+				console.println("Values:", JSON.stringify(result.values));
+				console.println("Positionals:", JSON.stringify(result.positionals));
+			`,
+			output: []string{
+				"Values: {\"foo\":true}",
+				"Positionals: [\"--bar\",\"baz\"]",
+			},
+		},
+		{
+			name: "util_parseArgs_allow_negative",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['--no-color', '--verbose'], {
+					options: {
+						color: { type: 'boolean' },
+						verbose: { type: 'boolean' }
+					},
+					allowNegative: true
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"color\":false,\"verbose\":true}",
+			},
+		},
+		{
+			name: "util_parseArgs_tokens",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['-f', '--bar', 'value'], {
+					options: {
+						foo: { type: 'boolean', short: 'f' },
+						bar: { type: 'string' }
+					},
+					tokens: true
+				});
+				console.println("Token count:", result.tokens.length);
+				console.println("First token kind:", result.tokens[0].kind);
+				console.println("First token name:", result.tokens[0].name);
+			`,
+			output: []string{
+				"Token count: 2",
+				"First token kind: option",
+				"First token name: foo",
+			},
+		},
+		{
+			name: "util_parseArgs_old_signature",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs({
+					args: ['-v', '--output', 'file.txt'],
+					options: {
+						verbose: { type: 'boolean', short: 'v' },
+						output: { type: 'string' }
+					}
+				});
+				console.println("Values:", JSON.stringify(result.values));
+			`,
+			output: []string{
+				"Values: {\"verbose\":true,\"output\":\"file.txt\"}",
 			},
 		},
 	}
