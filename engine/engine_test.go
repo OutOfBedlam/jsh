@@ -399,6 +399,124 @@ func TestExec(t *testing.T) {
 	}
 }
 
+func TestUtilSplitFields(t *testing.T) {
+	testCases := []TestCase{
+		{
+			name: "util_splitFields_basic",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("  foo   bar baz  ");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"foo\",\"bar\",\"baz\"]",
+			},
+		},
+		{
+			name: "util_splitFields_double_quotes",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields('hello "world foo" bar');
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"hello\",\"world foo\",\"bar\"]",
+			},
+		},
+		{
+			name: "util_splitFields_single_quotes",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("hello 'world foo' bar");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"hello\",\"world foo\",\"bar\"]",
+			},
+		},
+		{
+			name: "util_splitFields_mixed_quotes",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("a \"b c\" d 'e f' g");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"a\",\"b c\",\"d\",\"e f\",\"g\"]",
+			},
+		},
+		{
+			name: "util_splitFields_empty_string",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: []",
+			},
+		},
+		{
+			name: "util_splitFields_only_whitespace",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("   \t  \n  ");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: []",
+			},
+		},
+		{
+			name: "util_splitFields_tabs_and_newlines",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("foo\tbar\nbaz");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"foo\",\"bar\",\"baz\"]",
+			},
+		},
+		{
+			name: "util_splitFields_quoted_with_tabs",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields('a "b\tc" d');
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"a\",\"b\\tc\",\"d\"]",
+			},
+		},
+		{
+			name: "util_splitFields_multiple_quoted",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields('cmd "arg 1" "arg 2" "arg 3"');
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"cmd\",\"arg 1\",\"arg 2\",\"arg 3\"]",
+			},
+		},
+		{
+			name: "util_splitFields_no_spaces",
+			script: `
+				const {splitFields} = require("/lib/util");
+				const result = splitFields("hello");
+				console.println("Fields:", JSON.stringify(result));
+			`,
+			output: []string{
+				"Fields: [\"hello\"]",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		RunTest(t, tc)
+	}
+}
+
 func TestUtilParseArgs(t *testing.T) {
 	testCases := []TestCase{
 		{
