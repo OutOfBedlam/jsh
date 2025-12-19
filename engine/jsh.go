@@ -22,11 +22,17 @@ func New(conf Config) (*JSRuntime, error) {
 	fileSystem := NewFS()
 	fileSystem.Mount("/", Root(conf.Dev))
 
-	if dfs, err := checkFS(conf.Dir); err != nil {
-		fmt.Println("Error setting up filesystem:", err.Error())
-		os.Exit(1)
+	if conf.Mount != nil {
+		if err := conf.Mount(fileSystem); err != nil {
+			return nil, fmt.Errorf("error mounting filesystem: %v", err)
+		}
 	} else {
-		fileSystem.Mount("/work", dfs)
+		if dfs, err := DirFS(conf.Dir); err != nil {
+			fmt.Println("Error setting up filesystem:", err.Error())
+			os.Exit(1)
+		} else {
+			fileSystem.Mount("/work", dfs)
+		}
 	}
 
 	var reader io.Reader = os.Stdin
@@ -50,11 +56,18 @@ func New(conf Config) (*JSRuntime, error) {
 		WithExecBuilder(execBuilderFunc),
 	}
 	env := NewEnv(opts...)
-	env.Set("PATH", "/sbin:/lib:/work")
-	env.Set("HOME", "/work")
-	env.Set("PWD", "/work")
 	for k, v := range conf.Env {
 		env.Set(k, v)
+	}
+	// Default environment variables
+	if env.Get("PATH") == nil {
+		env.Set("PATH", "/sbin:/lib")
+	}
+	if env.Get("HOME") == nil {
+		env.Set("HOME", "/")
+	}
+	if env.Get("PWD") == nil {
+		env.Set("PWD", "/")
 	}
 
 	script := ""
@@ -127,7 +140,7 @@ func (jr *JSRuntime) Main() int {
 				return exit.Code
 			}
 		}
-		fmt.Print("runtime error:", err)
+		fmt.Println("runtime error:", err)
 		return 1
 	}
 	return jr.ExitCode()
@@ -192,8 +205,8 @@ func execBuilder(dir string, devDir string) ExecBuilderFunc {
 	}
 }
 
-// checkFS checks that the given directory exists and is a directory, returning an fs.FS for it.
-func checkFS(dir string) (fileSystem fs.FS, err error) {
+// DirFS checks that the given directory exists and is a directory, returning an fs.FS for it.
+func DirFS(dir string) (fileSystem fs.FS, err error) {
 	if dir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -227,6 +240,7 @@ type Config struct {
 	Writer      io.Writer       `json:"-"`
 	Reader      io.Reader       `json:"-"`
 	ExecBuilder ExecBuilderFunc `json:"-"`
+	Mount       MountFunc       `json:"-"`
 }
 
 type SecretBox struct {

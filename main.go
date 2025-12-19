@@ -41,6 +41,11 @@ func main() {
 		conf.Dev = *dev
 		conf.Args = flag.Args()
 		conf.Default = "/sbin/shell.js" // default script to run if no args
+		conf.Env = map[string]any{
+			"PATH": "/sbin:/lib:/work",
+			"HOME": "/work",
+			"PWD":  "/work",
+		}
 	}
 	engine, err := engine.New(conf)
 	if err != nil {
