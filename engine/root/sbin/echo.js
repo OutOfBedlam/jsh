@@ -1,19 +1,32 @@
 (() => {
+    const env = require('process').env;
     const args = require('process').argv.slice(2);
     if (args.length === 0) {
         console.println();
         return;
     }
 
-    // args = args.map(arg => {
-    //     if (typeof arg === 'string') {
-    //         return arg;
-    //     } else if (arg === null || arg === undefined) {
-    //         return '';
-    //     } else {
-    //         return String(arg);
-    //     }
-    // });
+    // Substitute environment variables in the string
+    function substituteEnvVars(str) {
+        // Replace ${VAR} format
+        let result = str.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, varName) => {
+            const value = env.get(varName);
+            return value !== undefined ? value : "";
+        });
+        
+        // Replace $VAR format
+        result = result.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, varName) => {
+            const value = env.get(varName);
+            return value !== undefined ? value : "";
+        });
+        
+        return result;
+    }
 
-    console.println(...args);
+    output = [];
+    for (let i = 0; i < args.length; i++) {
+        output.push(substituteEnvVars(args[i]));
+    }
+
+    console.println(...output);
 })()
