@@ -58,6 +58,7 @@ parseArgs(config)
 | `allowPositionals` | boolean | `!strict` | Allow positional arguments |
 | `allowNegative` | boolean | `false` | Allow `--no-` prefix for boolean options |
 | `tokens` | boolean | `false` | Return detailed parsing tokens |
+| `positionals` | Array | `undefined` | Named positional arguments definition (see below) |
 
 ### Option Definition
 
@@ -70,12 +71,36 @@ Each option in the `options` object can have:
 | `multiple` | boolean | No | Allow option to be specified multiple times (collects values in array) |
 | `default` | any | No | Default value if option is not provided |
 
+### Positional Definition
+
+The `positionals` array allows you to assign names to positional arguments. Each element can be:
+
+**String format** (simple):
+```javascript
+positionals: ['inputFile', 'outputFile']
+```
+
+**Object format** (advanced):
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `name` | string | Required | Name for this positional argument |
+| `optional` | boolean | `false` | Whether this argument is optional |
+| `default` | any | `undefined` | Default value if not provided (requires `optional: true`) |
+| `variadic` | boolean | `false` | Collect all remaining arguments (must be last) |
+
+**Important Rules:**
+- Variadic positionals must be the last in the array
+- Required positionals cannot come after optional ones
+- Missing required positionals will throw an error
+
 ### Return Value
 
 Returns an object with:
 
 - `values` (Object): Parsed option values
-- `positionals` (Array): Positional arguments
+- `positionals` (Array): Positional arguments (always present)
+- `namedPositionals` (Object, optional): Named positional arguments (only if `positionals` config provided)
 - `tokens` (Array, optional): Detailed parsing information (only if `tokens: true`)
 
 ## Examples
@@ -189,6 +214,77 @@ const result = parseArgs(['--no-color', '--verbose'], {
 // result.values: { color: false, verbose: true }
 ```
 
+### Named Positionals
+
+Assign names to positional arguments for easier access:
+
+```javascript
+const result = parseArgs(['input.txt', 'output.txt'], {
+    options: {},
+    allowPositionals: true,
+    positionals: ['inputFile', 'outputFile']
+});
+// result.positionals: ['input.txt', 'output.txt']
+// result.namedPositionals: { inputFile: 'input.txt', outputFile: 'output.txt' }
+```
+
+### Optional Positionals
+
+Make positional arguments optional with default values:
+
+```javascript
+const result = parseArgs(['input.txt'], {
+    options: {},
+    allowPositionals: true,
+    positionals: [
+        'inputFile',
+        { name: 'outputFile', optional: true, default: 'stdout' }
+    ]
+});
+// result.positionals: ['input.txt']
+// result.namedPositionals: { inputFile: 'input.txt', outputFile: 'stdout' }
+```
+
+### Variadic Positionals
+
+Collect remaining arguments into an array:
+
+```javascript
+const result = parseArgs(['input.txt', 'output.txt', 'file1.js', 'file2.js', 'file3.js'], {
+    options: {},
+    allowPositionals: true,
+    positionals: [
+        'inputFile',
+        'outputFile',
+        { name: 'files', variadic: true }
+    ]
+});
+// result.positionals: ['input.txt', 'output.txt', 'file1.js', 'file2.js', 'file3.js']
+// result.namedPositionals: {
+//     inputFile: 'input.txt',
+//     outputFile: 'output.txt',
+//     files: ['file1.js', 'file2.js', 'file3.js']
+// }
+```
+
+### Named Positionals with Options
+
+Combine options and named positionals:
+
+```javascript
+const result = parseArgs(['-v', '--config', 'app.json', 'src.js', 'dest.js'], {
+    options: {
+        verbose: { type: 'boolean', short: 'v' },
+        config: { type: 'string' }
+    },
+    allowPositionals: true,
+    positionals: ['source', 'destination']
+});
+// result.values: { verbose: true, config: 'app.json' }
+// result.positionals: ['src.js', 'dest.js']
+// result.namedPositionals: { source: 'src.js', destination: 'dest.js' }
+```
+
 ### Tokens Mode
 
 Get detailed parsing information:
@@ -234,6 +330,8 @@ The parser throws `TypeError` in the following cases:
 - Unexpected positional argument when `allowPositionals: false` and `strict: true`
 - Using `--no-` prefix on non-boolean option when `strict: true`
 - Boolean option with inline value when `strict: true`
+- Missing required positional argument (when using named positionals)
+- Variadic positional not in last position (when using named positionals)
 
 ### Example
 
@@ -245,6 +343,31 @@ try {
     });
 } catch (error) {
     console.error(error.message); // "Unknown option: --unknown"
+}
+```
+
+```javascript
+// Missing required positional
+try {
+    parseArgs(['input.txt'], {
+        positionals: ['inputFile', 'outputFile']  // outputFile required
+    });
+} catch (error) {
+    console.error(error.message); // "Missing required positional argument: outputFile"
+}
+```
+
+```javascript
+// Variadic not last
+try {
+    parseArgs([], {
+        positionals: [
+            { name: 'files', variadic: true },
+            'output'  // Error: cannot come after variadic
+        ]
+    });
+} catch (error) {
+    console.error(error.message); // "Variadic positional argument must be the last argument"
 }
 ```
 
@@ -264,6 +387,15 @@ This implementation is compatible with Node.js `util.parseArgs()` API, supportin
 - ✅ Negative options (`--no-option`)
 - ✅ Strict mode
 - ✅ Tokens mode
+
+## Extended Features
+
+Beyond Node.js `util.parseArgs()`, this implementation adds:
+
+- ✅ **Named positionals** - Assign names to positional arguments
+- ✅ **Optional positionals** - Make positional arguments optional with defaults
+- ✅ **Variadic positionals** - Collect remaining arguments into an array
+- ✅ **Positional validation** - Automatic validation of required arguments
 
 ## License
 

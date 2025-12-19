@@ -1,5 +1,5 @@
 const parseArgs = (argsOrConfig, maybeOptions) => {
-    let args, options, strict, allowNegative, tokens, allowPositionals;
+    let args, options, strict, allowNegative, tokens, allowPositionals, positionalsConfig;
     
     // Handle different call signatures:
     // parseArgs(options) - old style with config object
@@ -12,6 +12,7 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
         strict = config.strict !== undefined ? config.strict : true;
         allowNegative = config.allowNegative || false;
         tokens = config.tokens || false;
+        positionalsConfig = config.positionals;
         allowPositionals = config.allowPositionals !== undefined 
             ? config.allowPositionals 
             : !strict;
@@ -23,9 +24,32 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
         strict = config.strict !== undefined ? config.strict : true;
         allowNegative = config.allowNegative || false;
         tokens = config.tokens || false;
+        positionalsConfig = config.positionals;
         allowPositionals = config.allowPositionals !== undefined 
             ? config.allowPositionals 
             : !strict;
+    }
+
+    // Normalize positionals config
+    let positionalDefs = null;
+    if (positionalsConfig) {
+        positionalDefs = positionalsConfig.map(def => {
+            if (typeof def === 'string') {
+                return { name: def, optional: false };
+            }
+            return {
+                name: def.name,
+                optional: def.optional || false,
+                default: def.default,
+                variadic: def.variadic || false
+            };
+        });
+
+        // Validate: variadic must be last
+        const variadicIndex = positionalDefs.findIndex(def => def.variadic);
+        if (variadicIndex !== -1 && variadicIndex !== positionalDefs.length - 1) {
+            throw new TypeError('Variadic positional argument must be the last argument');
+        }
     }
 
     const result = {
@@ -35,6 +59,10 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
 
     if (tokens) {
         result.tokens = [];
+    }
+
+    if (positionalDefs) {
+        result.namedPositionals = {};
     }
 
     // Apply default values from options
@@ -306,6 +334,49 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
         }
 
         index++;
+    }
+
+    // Process named positionals if configured
+    if (positionalDefs && result.positionals.length > 0) {
+        let posIndex = 0;
+        
+        for (let i = 0; i < positionalDefs.length; i++) {
+            const def = positionalDefs[i];
+            
+            if (def.variadic) {
+                // Collect all remaining positionals
+                const variadicValues = [];
+                while (posIndex < result.positionals.length) {
+                    variadicValues.push(result.positionals[posIndex]);
+                    posIndex++;
+                }
+                result.namedPositionals[def.name] = variadicValues;
+            } else {
+                if (posIndex < result.positionals.length) {
+                    result.namedPositionals[def.name] = result.positionals[posIndex];
+                    posIndex++;
+                } else if (!def.optional) {
+                    throw new TypeError(`Missing required positional argument: ${def.name}`);
+                } else if ('default' in def) {
+                    result.namedPositionals[def.name] = def.default;
+                } else {
+                    result.namedPositionals[def.name] = undefined;
+                }
+            }
+        }
+    } else if (positionalDefs) {
+        // No positionals provided, apply defaults
+        for (const def of positionalDefs) {
+            if (!def.optional) {
+                throw new TypeError(`Missing required positional argument: ${def.name}`);
+            } else if (def.variadic) {
+                result.namedPositionals[def.name] = [];
+            } else if ('default' in def) {
+                result.namedPositionals[def.name] = def.default;
+            } else {
+                result.namedPositionals[def.name] = undefined;
+            }
+        }
     }
 
     return result;

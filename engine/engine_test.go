@@ -590,6 +590,60 @@ func TestUtilParseArgs(t *testing.T) {
 				"Values: {\"verbose\":true,\"output\":\"file.txt\"}",
 			},
 		},
+		{
+			name: "util_parseArgs_named_positionals",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['input.txt', 'output.txt'], {
+					options: {},
+					allowPositionals: true,
+					positionals: ['inputFile', 'outputFile']
+				});
+				console.println("Positionals:", JSON.stringify(result.positionals));
+				console.println("Named:", JSON.stringify(result.namedPositionals));
+			`,
+			output: []string{
+				"Positionals: [\"input.txt\",\"output.txt\"]",
+				"Named: {\"inputFile\":\"input.txt\",\"outputFile\":\"output.txt\"}",
+			},
+		},
+		{
+			name: "util_parseArgs_optional_positionals",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['input.txt'], {
+					options: {},
+					allowPositionals: true,
+					positionals: [
+						'inputFile',
+						{ name: 'outputFile', optional: true, default: 'stdout' }
+					]
+				});
+				console.println("Named:", JSON.stringify(result.namedPositionals));
+			`,
+			output: []string{
+				"Named: {\"inputFile\":\"input.txt\",\"outputFile\":\"stdout\"}",
+			},
+		},
+		{
+			name: "util_parseArgs_variadic_positionals",
+			script: `
+				const {parseArgs} = require("/lib/util");
+				const result = parseArgs(['input.txt', 'out.txt', 'a.js', 'b.js'], {
+					options: {},
+					allowPositionals: true,
+					positionals: [
+						'inputFile',
+						'outputFile',
+						{ name: 'files', variadic: true }
+					]
+				});
+				console.println("Named:", JSON.stringify(result.namedPositionals));
+			`,
+			output: []string{
+				"Named: {\"inputFile\":\"input.txt\",\"outputFile\":\"out.txt\",\"files\":[\"a.js\",\"b.js\"]}",
+			},
+		},
 	}
 	for _, tc := range testCases {
 		RunTest(t, tc)
