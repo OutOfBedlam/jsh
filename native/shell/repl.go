@@ -38,6 +38,7 @@ const replBanner = "\033[1;36m╔═══════════════�
 
 func (repl *Repl) Loop(call goja.FunctionCall) goja.Value {
 	var ed multiline.Editor
+	ed.SetTty(NewTty()) // See TtyWrap comment
 	ed.SetPrompt(repl.prompt)
 	ed.SetWriter(colorable.NewColorableStdout())
 	ed.SubmitOnEnterWhen(repl.submitOnEnterWhen)

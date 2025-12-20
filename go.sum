@@ -40,8 +40,8 @@ github.com/mochi-mqtt/server/v2 v2.7.9 h1:y0g4vrSLAag7T07l2oCzOa/+nKVLoazKEWAArw
 github.com/mochi-mqtt/server/v2 v2.7.9/go.mod h1:lZD3j35AVNqJL5cezlnSkuG05c0FCHSsfAKSPBOSbqc=
 github.com/nyaosorg/go-box/v3 v3.0.0 h1:W5qfScEkKBoD68gbP/lwfWlvcTRB0rwXkhL+9iC62xI=
 github.com/nyaosorg/go-box/v3 v3.0.0/go.mod h1:70GsE9mIh7JKVCxt71q3jEijO6C9YJmOZqWpPa9w+GY=
-github.com/nyaosorg/go-readline-ny v1.13.0 h1:3ifu0FQsswdB9N5vcph7lVzQvu20kVt6pMt1JuSz45o=
-github.com/nyaosorg/go-readline-ny v1.13.0/go.mod h1:pFXLTklUi8JVi6gI3HdnA3Wak/7cl+kx2q8kIIiAf/c=
+github.com/nyaosorg/go-readline-ny v1.12.3 h1:nF+ywMS1XFpIeONssuUxmu20S2tQIqkq1ahdEXBhIYU=
+github.com/nyaosorg/go-readline-ny v1.12.3/go.mod h1:pFXLTklUi8JVi6gI3HdnA3Wak/7cl+kx2q8kIIiAf/c=
 github.com/nyaosorg/go-ttyadapter v0.2.0 h1:2DEL0MeesXRzuppCUlZIwY4vUKTjfIL+8aoR+pUUzGg=
 github.com/nyaosorg/go-ttyadapter v0.2.0/go.mod h1:w6ySb/Y8rpr0uIju4vN/TMRHC/6ayabORHmEVs6d/qE=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

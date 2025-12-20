@@ -1,7 +1,6 @@
 try {
     const { ReadLine } = require('readline');
     const r = new ReadLine({
-        auto_input: runtime.env.get("auto_input"),
         prompt: function (line) {
             return line === 0 ? "get > " : "... > ";
         },

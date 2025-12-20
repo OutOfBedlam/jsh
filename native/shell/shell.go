@@ -43,16 +43,17 @@ type Shell struct {
 }
 
 var banner = "\n" +
-	"\033[93m     ██╗ ███████╗ ██╗  ██╗" + "\n" +
-	"\033[92m     ██║ ██╔════╝ ██║  ██║" + "\n" +
-	"\033[96m     ██║ ███████╗ ███████║" + "\n" +
-	"\033[94m██   ██║ ╚════██║ ██╔══██║" + "\n" +
-	"\033[95m╚█████╔╝ ███████║ ██║  ██║" + "\n" +
-	"\033[91m ╚════╝  ╚══════╝ ╚═╝  ╚═╝" + "\n" +
-	"\033[0m"
+	"\x1B[93m     ██╗ ███████╗ ██╗  ██╗" + "\n" +
+	"\x1B[92m     ██║ ██╔════╝ ██║  ██║" + "\n" +
+	"\x1B[96m     ██║ ███████╗ ███████║" + "\n" +
+	"\x1B[94m██   ██║ ╚════██║ ██╔══██║" + "\n" +
+	"\x1B[95m╚█████╔╝ ███████║ ██║  ██║" + "\n" +
+	"\x1B[91m ╚════╝  ╚══════╝ ╚═╝  ╚═╝" + "\n" +
+	"\x1B[0m" + "\n"
 
 func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 	var ed multiline.Editor
+	ed.SetTty(NewTty()) // See TtyWrap comment
 	ed.SetPrompt(sh.prompt)
 	ed.SubmitOnEnterWhen(sh.submitOnEnterWhen)
 	ed.SetWriter(colorable.NewColorableStdout())
@@ -98,13 +99,13 @@ func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 
 func (sh *Shell) prompt(w io.Writer, lineNo int) (int, error) {
 	if lineNo == 0 {
-		return w.Write([]byte("\033[31mjsh>\033[0m "))
+		return w.Write([]byte("\x1B[31mjsh>\x1B[0m "))
 	} else {
-		return w.Write([]byte("\033[31m...\033[0m  "))
+		return w.Write([]byte("\x1B[31m...\x1B[0m  "))
 	}
 }
 
-func (sh *Shell) submitOnEnterWhen(lines []string, i int) bool {
+func (sh *Shell) submitOnEnterWhen(lines []string, _ int) bool {
 	return !strings.HasSuffix(lines[len(lines)-1], `\`)
 }
 
