@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"io"
 	"io/fs"
 	"sort"
 	"strings"
@@ -128,6 +129,16 @@ func (m *FS) Stat(name string) (fs.FileInfo, error) {
 	}
 	defer f.Close()
 	return f.Stat()
+}
+
+func (m *FS) ReadFile(name string) ([]byte, error) {
+	name = CleanPath(name)
+	f, err := m.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
 }
 
 // ReadDir implements fs.ReadDirFS
