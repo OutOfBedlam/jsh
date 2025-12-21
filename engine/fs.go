@@ -102,6 +102,45 @@ func (m FS) bestMatch(name string) (fs.FS, string) {
 	return bestFS, bestMatch
 }
 
+// getRelativePath converts an absolute path to a relative path within a mounted filesystem
+func getRelativePath(name, bestMatch string) string {
+	relPath := strings.TrimPrefix(name, bestMatch)
+	relPath = strings.TrimPrefix(relPath, "/")
+	if relPath == "" {
+		return "."
+	}
+	return relPath
+}
+
+// getOSPath attempts to get the OS path from a filesystem (if it's os.DirFS)
+func getOSPath(filesystem fs.FS, relPath string) (string, error) {
+	// os.DirFS is a string type, so we can use reflection to check
+	if reflect.TypeOf(filesystem).Kind() == reflect.String {
+		return filepath.Join(fmt.Sprintf("%v", filesystem), relPath), nil
+	}
+	return "", fs.ErrPermission
+}
+
+// performOSOperation is a helper for operations that require OS filesystem access
+func (m *FS) performOSOperation(name string, operation func(string) error) error {
+	name = CleanPath(name)
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return fs.ErrNotExist
+	}
+
+	relPath := getRelativePath(name, bestMatch)
+	target, err := getOSPath(bestFS, relPath)
+	if err != nil {
+		return err
+	}
+
+	if err := operation(target); err != nil {
+		return fs.ErrInvalid
+	}
+	return nil
+}
+
 // Open implements fs.FS
 func (m *FS) Open(name string) (fs.File, error) {
 	name = CleanPath(name)
@@ -121,13 +160,7 @@ func (m *FS) Open(name string) (fs.File, error) {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 	}
 
-	relPath := strings.TrimPrefix(name, bestMatch)
-	relPath = strings.TrimPrefix(relPath, "/")
-	if relPath == "" {
-		relPath = "."
-	}
-
-	return bestFS.Open(relPath)
+	return bestFS.Open(getRelativePath(name, bestMatch))
 }
 
 func (m *FS) CleanPath(name string) string {
@@ -156,83 +189,19 @@ func (m *FS) ReadFile(name string) ([]byte, error) {
 
 // Mkdir creates a directory at the specified path
 func (m *FS) Mkdir(name string) error {
-	name = CleanPath(name)
-	// Find the longest matching mount point
-	bestFS, bestMatch := m.bestMatch(name)
-	if bestFS == nil {
-		return fs.ErrNotExist
-	}
-
-	relPath := strings.TrimPrefix(name, bestMatch)
-	relPath = strings.TrimPrefix(relPath, "/")
-	if relPath == "" {
-		relPath = "."
-	}
-
-	// Check if bestFS is a local filesystem that created from os.DirFS
-	if reflect.TypeOf(bestFS).Kind() != reflect.String {
-		return fs.ErrPermission
-	}
-	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
-	err := os.MkdirAll(target, 0755)
-	if err != nil {
-		return fs.ErrInvalid
-	}
-	return nil
+	return m.performOSOperation(name, func(target string) error {
+		return os.MkdirAll(target, 0755)
+	})
 }
 
 // Rmdir removes a directory at the specified path
 func (m *FS) Rmdir(name string) error {
-	name = CleanPath(name)
-	// Find the longest matching mount point
-	bestFS, bestMatch := m.bestMatch(name)
-	if bestFS == nil {
-		return fs.ErrNotExist
-	}
-
-	relPath := strings.TrimPrefix(name, bestMatch)
-	relPath = strings.TrimPrefix(relPath, "/")
-	if relPath == "" {
-		relPath = "."
-	}
-
-	// Check if bestFS is a local filesystem that created from os.DirFS
-	if reflect.TypeOf(bestFS).Kind() != reflect.String {
-		return fs.ErrPermission
-	}
-	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
-	err := os.Remove(target)
-	if err != nil {
-		return fs.ErrInvalid
-	}
-	return nil
+	return m.performOSOperation(name, os.Remove)
 }
 
 // Remove removes a file at the specified path
 func (m *FS) Remove(name string) error {
-	name = CleanPath(name)
-	// Find the longest matching mount point
-	bestFS, bestMatch := m.bestMatch(name)
-	if bestFS == nil {
-		return fs.ErrNotExist
-	}
-
-	relPath := strings.TrimPrefix(name, bestMatch)
-	relPath = strings.TrimPrefix(relPath, "/")
-	if relPath == "" {
-		relPath = "."
-	}
-
-	// Check if bestFS is a local filesystem that created from os.DirFS
-	if reflect.TypeOf(bestFS).Kind() != reflect.String {
-		return fs.ErrPermission
-	}
-	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
-	err := os.Remove(target)
-	if err != nil {
-		return fs.ErrInvalid
-	}
-	return nil
+	return m.performOSOperation(name, os.Remove)
 }
 
 // Rename renames a file or directory from oldName to newName
@@ -257,26 +226,20 @@ func (m *FS) Rename(oldName, newName string) error {
 		return fs.ErrInvalid
 	}
 
-	oldRelPath := strings.TrimPrefix(oldName, oldMatch)
-	oldRelPath = strings.TrimPrefix(oldRelPath, "/")
-	if oldRelPath == "" {
-		oldRelPath = "."
-	}
+	oldRelPath := getRelativePath(oldName, oldMatch)
+	newRelPath := getRelativePath(newName, newMatch)
 
-	newRelPath := strings.TrimPrefix(newName, newMatch)
-	newRelPath = strings.TrimPrefix(newRelPath, "/")
-	if newRelPath == "" {
-		newRelPath = "."
-	}
-
-	// Check if oldFS is a local filesystem that created from os.DirFS
-	if reflect.TypeOf(oldFS).Kind() != reflect.String {
-		return fs.ErrPermission
-	}
-	oldTarget := filepath.Join(fmt.Sprintf("%v", oldFS), oldRelPath)
-	newTarget := filepath.Join(fmt.Sprintf("%v", newFS), newRelPath)
-	err := os.Rename(oldTarget, newTarget)
+	oldTarget, err := getOSPath(oldFS, oldRelPath)
 	if err != nil {
+		return err
+	}
+
+	newTarget, err := getOSPath(newFS, newRelPath)
+	if err != nil {
+		return err
+	}
+
+	if err := os.Rename(oldTarget, newTarget); err != nil {
 		return fs.ErrInvalid
 	}
 	return nil
@@ -284,29 +247,9 @@ func (m *FS) Rename(oldName, newName string) error {
 
 // WriteFile writes data to a file at the specified path
 func (m *FS) WriteFile(name string, data []byte) error {
-	name = CleanPath(name)
-	// Find the longest matching mount point
-	bestFS, bestMatch := m.bestMatch(name)
-	if bestFS == nil {
-		return fs.ErrNotExist
-	}
-
-	relPath := strings.TrimPrefix(name, bestMatch)
-	relPath = strings.TrimPrefix(relPath, "/")
-	if relPath == "" {
-		relPath = "."
-	}
-
-	// Check if bestFS is a local filesystem that created from os.DirFS
-	if reflect.TypeOf(bestFS).Kind() != reflect.String {
-		return fs.ErrPermission
-	}
-	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
-	err := os.WriteFile(target, data, 0644)
-	if err != nil {
-		return fs.ErrInvalid
-	}
-	return nil
+	return m.performOSOperation(name, func(target string) error {
+		return os.WriteFile(target, data, 0644)
+	})
 }
 
 // ReadDir implements fs.ReadDirFS
@@ -328,11 +271,7 @@ func (m *FS) ReadDir(name string) ([]fs.DirEntry, error) {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
 	}
 
-	relPath := strings.TrimPrefix(name, bestMatch)
-	relPath = strings.TrimPrefix(relPath, "/")
-	if relPath == "" {
-		relPath = "."
-	}
+	relPath := getRelativePath(name, bestMatch)
 
 	// Read base directory entries
 	var entries []fs.DirEntry
