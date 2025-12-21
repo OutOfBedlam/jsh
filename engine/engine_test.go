@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
-	"time"
 )
 
 type TestCase struct {
@@ -120,24 +119,11 @@ func TestCleanPath(t *testing.T) {
 }
 
 func TestEngine(t *testing.T) {
-	timeNow := time.Unix(1764728536, 0).In(time.Local)
 	ts := []TestCase{
 		{
 			name:   "console_log",
 			script: `console.log("Hello, World!");`,
 			output: []string{"INFO  Hello, World!"},
-		},
-		{
-			name: "now",
-			script: `
-				const x = console;
-				const {now} = require("process");
-				x.println("NOW:", now());`,
-			preTest:  func(jr *JSRuntime) { jr.nowFunc = func() time.Time { return time.Unix(1764728536, 0) } },
-			postTest: func(jr *JSRuntime) { jr.nowFunc = time.Now },
-			output: []string{
-				fmt.Sprintf("NOW: %s", timeNow.Format(time.DateTime)),
-			},
 		},
 		{
 			name: "module_demo",
@@ -247,27 +233,7 @@ func TestSetTimeout(t *testing.T) {
 	}
 }
 
-func TestShutdownHook(t *testing.T) {
-	testCases := []TestCase{
-		{
-			name: "runtime_addShutdownHook",
-			script: `
-				const {addShutdownHook} = require('process');
-				console.log("Setting shutdown hook");
-				addShutdownHook(function() {
-					console.debug("Shutdown hook called");
-				});
-			`,
-			output: []string{
-				"INFO  Setting shutdown hook",
-				"DEBUG Shutdown hook called",
-			},
-		},
-	}
-	for _, tc := range testCases {
-		RunTest(t, tc)
-	}
-}
+// TestShutdownHook tests have been moved to process_test.go
 
 func TestEventLoop(t *testing.T) {
 	testCases := []TestCase{
@@ -351,53 +317,7 @@ func TestEventLoop(t *testing.T) {
 	}
 }
 
-func TestExec(t *testing.T) {
-	testCases := []TestCase{
-		{
-			name: "runtime_exec",
-			script: `
-				const {exec} = require('process');
-				exec("hello.js");
-			`,
-			output: []string{
-				"Hello  from demo.js!",
-			},
-		},
-		{
-			name: "runtime_exec_args",
-			script: `
-				const {exec} = require('process');
-				exec("hello.js", "世界");
-			`,
-			output: []string{
-				"Hello 世界 from demo.js!",
-			},
-		},
-		{
-			name: "runtime_exec_string",
-			script: `
-				const {execString} = require('process');
-				execString("console.log('Hello World')");
-			`,
-			output: []string{
-				"INFO  Hello World",
-			},
-		},
-		{
-			name: "runtime_exec_string_arg",
-			script: `
-				const {execString} = require('process');
-				execString("const {argv} = require('process'); console.log('Hello '+argv[2])", "World");
-			`,
-			output: []string{
-				"INFO  Hello World",
-			},
-		},
-	}
-	for _, tc := range testCases {
-		RunTest(t, tc)
-	}
-}
+// TestExec tests have been moved to process_test.go
 
 func TestUtilSplitFields(t *testing.T) {
 	testCases := []TestCase{
