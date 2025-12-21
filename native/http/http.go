@@ -2,7 +2,6 @@ package http
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,23 +9,11 @@ import (
 	"github.com/dop251/goja"
 )
 
-//go:embed http.js
-var httpJS string
-
 func Module(rt *goja.Runtime, module *goja.Object) {
-	// Export native functions to embedded JS module
-	m := rt.NewObject()
+	// Export native functions
+	m := module.Get("exports").(*goja.Object)
 	m.Set("NewClient", NewClient)
 	m.Set("NewRequest", NewRequest)
-	rt.Set("_http", m)
-
-	// Run the embedded JS module code
-	rt.Set("module", module)
-	_, err := rt.RunString("(()=>{" + httpJS + "})()")
-	if err != nil {
-		panic(err)
-	}
-	rt.Set("module", goja.Undefined())
 }
 
 func NewClient() *Client {

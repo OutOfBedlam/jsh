@@ -1,5 +1,5 @@
 (() => {
-    const m = require("shell");
+    const m = require("@jsh/shell");
     const r = new m.Shell();
     r.run();
 })()

@@ -2,7 +2,6 @@ package readline
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"io"
 	"strings"
@@ -12,22 +11,10 @@ import (
 	"github.com/nyaosorg/go-ttyadapter/auto"
 )
 
-//go:embed readline.js
-var readlineJS string
-
 func Module(rt *goja.Runtime, module *goja.Object) {
-	// Export native functions to embedded JS module
-	m := rt.NewObject()
+	// Export native functions
+	m := module.Get("exports").(*goja.Object)
 	m.Set("NewReadLine", NewReadLine(rt))
-	rt.Set("_readline", m)
-
-	// Run the embedded JS module code
-	rt.Set("module", module)
-	_, err := rt.RunString(fmt.Sprintf(`(()=>{%s})()`, readlineJS))
-	if err != nil {
-		panic(err)
-	}
-	rt.Set("module", goja.Undefined())
 }
 
 func NewReadLine(vm *goja.Runtime) func(obj *goja.Object, opt *goja.Object) *Reader {

@@ -35,7 +35,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
 		jr.RegisterNativeModule("process", jr.Process)
-		jr.RegisterNativeModule("readline", Module)
+		jr.RegisterNativeModule("@jsh/readline", Module)
 
 		if len(tc.input) > 0 {
 			conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, ""))
@@ -65,7 +65,7 @@ func TestReadLineModule(t *testing.T) {
 		{
 			name: "module",
 			script: `
-				const rl = require('readline');
+				const rl = require('/lib/readline');
 				console.println("MODULE:", typeof rl.ReadLine);
 			`,
 			output: []string{
@@ -75,7 +75,7 @@ func TestReadLineModule(t *testing.T) {
 		{
 			name: "constructor-no-args",
 			script: `
-				const {ReadLine} = require('readline');
+				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine();
 				console.printf("RL: %X\n", ReadLine.CtrlJ);
 			`,
@@ -97,7 +97,7 @@ func TestReadLine(t *testing.T) {
 			script: `
 			try{
 				const {env} = require('process');
-				const {ReadLine} = require('readline');
+				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine({
 					prompt: (lineno) => { return "prompt> "},
 					autoInput: env.get("auto_input"),
@@ -135,7 +135,7 @@ func TestReadLineSubmitOnEnterWhen(t *testing.T) {
 			script: `
 			try{
 				const process = require('process');
-				const {ReadLine} = require('readline');
+				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine({
 					autoInput: process.env.get("auto_input"),
 					submitOnEnterWhen: (lines, idx) => {
@@ -175,7 +175,7 @@ func TestReadLineCancel(t *testing.T) {
 			script: `
 			try{
 				const process = require('process');
-				const {ReadLine} = require('readline');
+				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine({
 					autoInput: process.env.get("auto_input"),
 				});

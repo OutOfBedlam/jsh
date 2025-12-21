@@ -5,7 +5,7 @@ A JSH native module that provides interactive line-editing capabilities. Based o
 ## Installation
 
 ```javascript
-const { ReadLine } = require("readline");
+const { ReadLine } = require('/lib/readline');
 ```
 
 ## Classes
@@ -30,7 +30,7 @@ new ReadLine(options)
 **Example:**
 
 ```javascript
-const { ReadLine } = require('readline');
+const { ReadLine } = require('/lib/readline');
 const r = new ReadLine({
     prompt: (lineno) => { 
         return lineno === 0 ? "prompt> " : "....... "
@@ -173,7 +173,7 @@ The ReadLine class provides constants for special keys and control sequences:
 ### Basic Input
 
 ```javascript
-const { ReadLine } = require('readline');
+const { ReadLine } = require('/lib/readline');
 
 const r = new ReadLine({
     prompt: (lineno) => { return "prompt> "},
@@ -196,7 +196,7 @@ OK: Hello World
 ### Multi-line Input with Custom Submit Logic
 
 ```javascript
-const { ReadLine } = require('readline');
+const { ReadLine } = require('/lib/readline');
 
 const r = new ReadLine({
     submitOnEnterWhen: (lines, idx) => {
@@ -227,7 +227,7 @@ semi-colon;
 ### Automated Input (for testing)
 
 ```javascript
-const { ReadLine } = require('readline');
+const { ReadLine } = require('/lib/readline');
 
 const r = new ReadLine({
     autoInput: [
@@ -243,7 +243,7 @@ console.println("Input:", line);
 ### Canceling Input
 
 ```javascript
-const { ReadLine } = require('readline');
+const { ReadLine } = require('/lib/readline');
 
 try {
     const r = new ReadLine();
@@ -269,7 +269,7 @@ ERR: EOF
 ### Custom Prompt for Each Line
 
 ```javascript
-const { ReadLine } = require('readline');
+const { ReadLine } = require('/lib/readline');
 
 const r = new ReadLine({
     prompt: (lineno) => {

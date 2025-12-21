@@ -5,7 +5,7 @@ A JSH native module that provides WebSocket client functionality. Based on the G
 ## Installation
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 ```
 
 ## Classes
@@ -29,7 +29,7 @@ new WebSocket(url)
 **Example:**
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 const ws = new WebSocket("ws://localhost:8080");
 ```
 
@@ -178,7 +178,7 @@ ws.on("error", (err) => {
 ### Basic Connection
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://localhost:8080");
 
@@ -205,7 +205,7 @@ INFO  websocket closed
 ### Simple Close
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://localhost:8080");
 
@@ -228,7 +228,7 @@ websocket closed
 ### Send and Receive Messages
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://localhost:8080");
 
@@ -266,7 +266,7 @@ INFO  websocket closed
 ### Multiple Event Listeners
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://localhost:8080");
 
@@ -298,7 +298,7 @@ websocket closed
 ### Handling Connection Errors
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 // Try to connect to a non-existent server
 const ws = new WebSocket("ws://127.0.0.1:9999");
@@ -316,7 +316,7 @@ err: dial tcp 127.0.0.1:9999: connect: connection refused
 ### Sending Without Connection
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://127.0.0.1:9999");
 
@@ -339,7 +339,7 @@ err: websocket is not open
 ### Checking Ready State
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://localhost:8080");
 
@@ -359,7 +359,7 @@ ws.on("close", () => {
 ### Echo Client Example
 
 ```javascript
-const { WebSocket } = require("ws");
+const { WebSocket } = require("/lib/ws");
 
 const ws = new WebSocket("ws://echo.websocket.org");
 

@@ -53,11 +53,11 @@ func main() {
 		os.Exit(1)
 	}
 	engine.RegisterNativeModule("process", engine.Process)
-	engine.RegisterNativeModule("shell", shell.Module)
-	engine.RegisterNativeModule("readline", readline.Module)
-	engine.RegisterNativeModule("http", http.Module)
-	engine.RegisterNativeModule("ws", ws.Module)
-	engine.RegisterNativeModule("mqtt", mqtt.Module)
+	engine.RegisterNativeModule("@jsh/shell", shell.Module)
+	engine.RegisterNativeModule("@jsh/readline", readline.Module)
+	engine.RegisterNativeModule("@jsh/http", http.Module)
+	engine.RegisterNativeModule("@jsh/ws", ws.Module)
+	engine.RegisterNativeModule("@jsh/mqtt", mqtt.Module)
 
 	os.Exit(engine.Main())
 }

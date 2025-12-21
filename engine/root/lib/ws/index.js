@@ -1,3 +1,7 @@
+'use strict';
+
+const _ws = require('@jsh/ws');
+
 // events: "open", "close", "message", "error"
 class WebSocket extends EventEmitter {
     constructor(url) {

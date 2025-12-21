@@ -5,7 +5,7 @@ A JSH native module that provides HTTP client functionality similar to Node.js's
 ## Installation
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 ```
 
 ## Functions
@@ -321,7 +321,7 @@ response.close();
 ### Simple GET Request
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const url = "http://example.com?echo=Hello";
 const req = http.request(url);
@@ -341,7 +341,7 @@ Status: 200 OK
 ### GET Request with Options
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const url = new URL("http://example.com?echo=Hello");
 const req = http.request(url, {
@@ -372,7 +372,7 @@ Status: 200 OK
 ### POST Request with JSON
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const req = http.request("http://example.com/api", {
     method: "POST",
@@ -411,7 +411,7 @@ message:Hello, World!, reply:Received
 ### Using http.get() with Callback
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const url = "http://example.com?echo=Hi";
 http.get(url, (response) => {
@@ -429,7 +429,7 @@ Status: 200 OK
 ### Using http.get() with Event Listener
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const url = "http://example.com?echo=Hi";
 const req = http.get(url);
@@ -448,7 +448,7 @@ Status: 200 OK
 ### GET Request with Custom Headers
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const url = "http://example.com?echo=Hi";
 const options = {
@@ -474,7 +474,7 @@ X-Test-Header: TestValue
 ### Reading Response Body and Headers
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const options = {
     url: new URL("http://example.com?echo=Hi"),
@@ -513,7 +513,7 @@ Date: Fri, 12 Dec 2025 12:20:01 GMT
 ### Handling 404 Errors
 
 ```javascript
-const http = require("http");
+const http = require("/lib/http");
 
 const url = "http://example.com/notfound";
 http.get(url, (response) => {

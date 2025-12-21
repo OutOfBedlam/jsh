@@ -82,7 +82,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
 		jr.RegisterNativeModule("process", jr.Process)
-		jr.RegisterNativeModule("http", Module)
+		jr.RegisterNativeModule("@jsh/http", Module)
 
 		if err := jr.Run(); err != nil {
 			if tc.err == "" || !strings.Contains(err.Error(), tc.err) {
@@ -109,7 +109,7 @@ func TestHttpRequest(t *testing.T) {
 		{
 			name: "http_request_get",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = new URL(env.get("testURL")+"?echo=Hello?");
 				const req = http.request(url);
@@ -127,7 +127,7 @@ func TestHttpRequest(t *testing.T) {
 		{
 			name: "http_request_method_url",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = new URL(env.get("testURL")+"?echo=Hello?");
 				const req = http.request(url, {
@@ -155,7 +155,7 @@ func TestHttpRequest(t *testing.T) {
 		{
 			name: "http_request_post",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const req = http.request(
 					env.get("testURL"),
@@ -201,7 +201,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_string",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = env.get("testURL")+"?echo=Hi?";
 				http.get(url, (response)=> {
@@ -217,7 +217,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_string_on",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = env.get("testURL")+"?echo=Hi?";
 				const req = http.get(url)
@@ -234,7 +234,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_url",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = new URL(env.get("testURL")+"?echo=Hi?");
 				http.get(url, (response)=> {
@@ -250,7 +250,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_string_options",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = env.get("testURL")+"?echo=Hi?";
 				const opt = {
@@ -271,7 +271,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_url_options",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = new URL(env.get("testURL")+"?echo=Hi?");
 				const opt = {
@@ -292,7 +292,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_options",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const opt = {
 					url: new URL(env.get("testURL")+"?echo=Hi?"),
@@ -330,7 +330,7 @@ func TestHttpGet(t *testing.T) {
 		{
 			name: "http_get_not_found",
 			script: `
-				const http = require("http");
+				const http = require("/lib/http");
 				const {env} = require('process');
 				const url = env.get("testURL")+"/notfound";
 				http.get(url, (response)=> {

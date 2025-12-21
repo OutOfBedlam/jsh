@@ -2,7 +2,6 @@ package mqtt
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -14,23 +13,11 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-//go:embed mqtt.js
-var mqttJS string
-
 func Module(rt *goja.Runtime, module *goja.Object) {
-	// Export native functions to embedded JS module
-	m := rt.NewObject()
+	// Export native functions
+	m := module.Get("exports").(*goja.Object)
 	m.Set("parseConfig", ParseConfig)
 	m.Set("NewClient", NewClient)
-	rt.Set("_mqtt", m)
-
-	// Run the embedded JS module code
-	rt.Set("module", module)
-	_, err := rt.RunString("(()=>{" + mqttJS + "})()")
-	if err != nil {
-		panic(err)
-	}
-	rt.Set("module", goja.Undefined())
 }
 
 type Config struct {

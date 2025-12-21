@@ -1,5 +1,7 @@
 'use strict';
 
+const _http = require('@jsh/http');
+
 class Agent {
     constructor(opts = {}) {
         this.options = opts;

@@ -62,7 +62,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
 		jr.RegisterNativeModule("process", jr.Process)
-		jr.RegisterNativeModule("ws", Module)
+		jr.RegisterNativeModule("@jsh/ws", Module)
 
 		if len(tc.input) > 0 {
 			conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, ""))
@@ -92,7 +92,7 @@ func TestWebSocket(t *testing.T) {
 		{
 			name: "module",
 			script: `
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				console.println("CONNECTING:", WebSocket.CONNECTING);
 				console.println("OPEN:", WebSocket.OPEN);
 				console.println("CLOSING:", WebSocket.CLOSING);
@@ -108,7 +108,7 @@ func TestWebSocket(t *testing.T) {
 		{
 			name: "constructor-no-args",
 			script: `
-				const m1 = require("ws");
+				const m1 = require("/lib/ws");
 				try {
 					new m1.WebSocket();
 				} catch(e) {
@@ -120,7 +120,7 @@ func TestWebSocket(t *testing.T) {
 		{
 			name: "constructor",
 			script: `
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket("ws://localhost:8080");
 				console.println(ws.url);
 			`,
@@ -141,7 +141,7 @@ func TestWebSocketConnection(t *testing.T) {
 			name: "connect",
 			script: `
 				const {env} = require('process');
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
 					console.log("websocket error: " + err.message);
@@ -163,7 +163,7 @@ func TestWebSocketConnection(t *testing.T) {
 			name: "close",
 			script: `
 				const {env} = require('process');
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("open", function() {
 					console.println("websocket open");
@@ -182,7 +182,7 @@ func TestWebSocketConnection(t *testing.T) {
 			name: "send_receive",
 			script: `
 				const {env} = require('process');
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
 					console.log("websocket error: " + err);
@@ -213,7 +213,7 @@ func TestWebSocketConnection(t *testing.T) {
 			name: "multiple_event_listeners",
 			script: `
 				const {env} = require('process');
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				const onMessage = function(m) {
 					console.println("got: "+m.data);
@@ -251,7 +251,7 @@ func TestWebSocketConnectionError(t *testing.T) {
 		{
 			name: "connection_error",
 			script: `
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket("ws://127.0.0.1:9999");
 				ws.on("error", function(err){
 					console.println("err:",err.message);
@@ -264,7 +264,7 @@ func TestWebSocketConnectionError(t *testing.T) {
 		{
 			name: "send_without_connection",
 			script: `
-				const {WebSocket} = require("ws");
+				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket("ws://127.0.0.1:9999");
 				ws.on("error", function(err){
 					console.println("err:", err.message);

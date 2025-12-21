@@ -1,7 +1,6 @@
 package ws
 
 import (
-	_ "embed"
 	"fmt"
 
 	"github.com/OutOfBedlam/jsh/engine"
@@ -9,22 +8,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//go:embed ws.js
-var wsJS string
-
 func Module(rt *goja.Runtime, module *goja.Object) {
-	// Export native functions to embedded JS module
-	m := rt.NewObject()
+	// Export native functions
+	m := module.Get("exports").(*goja.Object)
 	m.Set("NewWebSocket", NewNativeWebSocket)
-	rt.Set("_ws", m)
-
-	// Run the embedded JS module code
-	rt.Set("module", module)
-	_, err := rt.RunString(fmt.Sprintf(`(()=>{%s})()`, wsJS))
-	if err != nil {
-		panic(err)
-	}
-	rt.Set("module", goja.Undefined())
 }
 
 func NewNativeWebSocket(obj *goja.Object, url string, dispatch engine.EventDispatchFunc) *WebSocket {

@@ -1,5 +1,7 @@
 'use strict';
 
+const _mqtt = require('@jsh/mqtt');
+
 class Client extends EventEmitter {
     constructor(options) {
         super();

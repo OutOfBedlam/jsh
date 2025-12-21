@@ -1,5 +1,7 @@
 'use strict';
 
+const _readline = require('@jsh/readline');
+
 class ReadLine {
     constructor(options) {
         this.raw = _readline.NewReadLine(this, options || {});
