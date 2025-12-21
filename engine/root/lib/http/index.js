@@ -57,6 +57,81 @@ function request() {
     return new ClientRequest(options);
 }
 
+// IncomingMessage - represents HTTP response
+class IncomingMessage extends EventEmitter {
+    constructor(rawResponse) {
+        super();
+        this.raw = rawResponse;
+        this.statusCode = rawResponse.statusCode || 0;
+        this.statusMessage = rawResponse.statusMessage || '';
+        this.headers = rawResponse.headers || {};
+        this.rawHeaders = this._getRawHeaders(rawResponse.headers);
+        this.httpVersion = '1.1';
+        this.complete = true;
+        this.ok = rawResponse.ok || false;
+    }
+
+    _getRawHeaders(headersObj) {
+        const rawHeaders = [];
+        if (!headersObj || typeof headersObj !== 'object') return rawHeaders;
+        
+        for (const key in headersObj) {
+            const value = headersObj[key];
+            if (Array.isArray(value)) {
+                for (const v of value) {
+                    rawHeaders.push(key, v);
+                }
+            } else {
+                rawHeaders.push(key, value);
+            }
+        }
+        return rawHeaders;
+    }
+
+    setTimeout(msecs, callback) {
+        if (callback) {
+            this.once('timeout', callback);
+        }
+        return this;
+    }
+
+    // Read response body as string
+    readBody(encoding = 'utf-8') {
+        if (this.raw && this.raw.string) {
+            return this.raw.string();
+        }
+        return '';
+    }
+
+    // Read response body as buffer
+    readBodyBuffer() {
+        if (this.raw && this.raw.read) {
+            return this.raw.read();
+        }
+        return new Uint8Array(0);
+    }
+
+    // Parse response body as JSON
+    json() {
+        if (this.raw && this.raw.json) {
+            return this.raw.json();
+        }
+        const body = this.readBody('utf-8');
+        return JSON.parse(body);
+    }
+
+    // Parse response body as text
+    text(encoding = 'utf-8') {
+        return this.readBody(encoding);
+    }
+
+    close() {
+        if (this.raw && this.raw.close) {
+            this.raw.close();
+        }
+    }
+}
+
 // events: "response", "error", "end"
 class OutgoingMessage extends EventEmitter {
     constructor() {
@@ -77,18 +152,69 @@ class ClientRequest extends OutgoingMessage {
             (options.port ? (":" + options.port) : "") +
             (options.path || "/"));
         const req = _http.NewRequest(options.method.toUpperCase(), url.toString());
+        this.raw = req;
+        this.options = options;
+        this._headers = {};
+        
         for (const key in options) {
             if (key === "headers") {
                 for (const hkey in options.headers) {
-                    req.header.set(hkey, options.headers[hkey].toString());
+                    this.setHeader(hkey, options.headers[hkey]);
                 }
             } else if (key === "auth") {
-                req.header.set("Authorization", "Basic " + _http.base64Encode(options.auth));
+                this.setHeader("Authorization", "Basic " + _http.base64Encode(options.auth));
             }
         }
-        this.raw = req;
-        this.options = options;
     }
+
+    setHeader(name, value) {
+        if (typeof name !== 'string') {
+            throw new TypeError('Header name must be a string');
+        }
+        if (value === undefined) {
+            throw new TypeError('Header value cannot be undefined');
+        }
+        this._headers[name.toLowerCase()] = { name, value: String(value) };
+        this.raw.header.set(name, String(value));
+        return this;
+    }
+
+    getHeader(name) {
+        if (typeof name !== 'string') {
+            throw new TypeError('Header name must be a string');
+        }
+        const header = this._headers[name.toLowerCase()];
+        return header ? header.value : undefined;
+    }
+
+    removeHeader(name) {
+        if (typeof name !== 'string') {
+            throw new TypeError('Header name must be a string');
+        }
+        delete this._headers[name.toLowerCase()];
+        this.raw.header.del(name);
+        return this;
+    }
+
+    hasHeader(name) {
+        if (typeof name !== 'string') {
+            throw new TypeError('Header name must be a string');
+        }
+        return name.toLowerCase() in this._headers;
+    }
+
+    getHeaders() {
+        const headers = {};
+        for (const key in this._headers) {
+            headers[this._headers[key].name] = this._headers[key].value;
+        }
+        return headers;
+    }
+
+    getHeaderNames() {
+        return Object.keys(this._headers).map(key => this._headers[key].name);
+    }
+
     destroy(err) {
         this.raw = null;
         if (err) {
@@ -145,15 +271,17 @@ class ClientRequest extends OutgoingMessage {
         }
         setImmediate(() => {
             const agent = this.options.agent ? this.options.agent : new Agent();
-            let rsp = undefined;
+            let rawRsp = undefined;
+            let incomingMsg = undefined;
             try {
-                rsp = agent.raw.do(this.raw);
-                this.emit('response', rsp);
+                rawRsp = agent.raw.do(this.raw);
+                incomingMsg = new IncomingMessage(rawRsp);
+                this.emit('response', incomingMsg);
             } catch (err) {
                 this.emit('error', err);
             } finally {
-                if (rsp) {
-                    rsp.close();
+                if (incomingMsg) {
+                    incomingMsg.close();
                 }
                 this.emit("end")
             }
@@ -195,6 +323,8 @@ function get() {
 
 module.exports = {
     Agent,
+    ClientRequest,
+    IncomingMessage,
     get,
     request,
 }

@@ -85,7 +85,7 @@ Same as `http.request()`, but the method is automatically set to GET.
 // Simple GET with callback
 http.get("http://example.com", (response) => {
     console.println("Status:", response.statusCode);
-    console.println("Body:", response.string());
+    console.println("Body:", response.text());
 });
 
 // GET with URL object
@@ -145,6 +145,103 @@ Closes the agent and releases all resources.
 agent.destroy();
 ```
 
+### IncomingMessage
+
+Represents an HTTP response. Extends EventEmitter.
+
+#### Properties
+
+- `ok` (boolean): `true` if status code is 200-299
+- `statusCode` (number): HTTP status code
+- `statusMessage` (string): HTTP status message (e.g., "200 OK")
+- `headers` (Object): Response headers (lowercase keys)
+- `rawHeaders` (Array): Raw headers as alternating key-value pairs
+- `httpVersion` (string): HTTP protocol version (e.g., "1.1")
+- `complete` (boolean): Whether the response has been fully received
+- `raw` (Object): Raw Go response object
+
+**Example:**
+
+```javascript
+http.get("http://example.com", (response) => {
+    console.println("OK:", response.ok);
+    console.println("Status Code:", response.statusCode);
+    console.println("Status Message:", response.statusMessage);
+    console.println("Content-Type:", response.headers["content-type"]);
+    console.println("HTTP Version:", response.httpVersion);
+});
+```
+
+#### Methods
+
+##### response.json()
+
+Parses the response body as JSON.
+
+**Returns:** Object - Parsed JSON object or throws on error
+
+**Example:**
+
+```javascript
+http.get("http://example.com/api", (response) => {
+    const data = response.json();
+    console.println("Message:", data.message);
+});
+```
+
+##### response.text([encoding])
+
+Reads the response body as a string.
+
+**Parameters:**
+- `encoding` (string): Character encoding (default: "utf-8")
+
+**Returns:** string - Response body text or empty string on error
+
+**Example:**
+
+```javascript
+http.get("http://example.com", (response) => {
+    const body = response.text();
+    console.println("Body:", body);
+});
+```
+
+##### response.readBody([encoding])
+
+Reads the response body as a string. (Alias for internal use)
+
+**Parameters:**
+- `encoding` (string): Character encoding (default: "utf-8")
+
+**Returns:** string
+
+##### response.readBodyBuffer()
+
+Reads the response body as a buffer.
+
+**Returns:** Uint8Array - Response body as binary data
+
+##### response.setTimeout(msecs[, callback])
+
+Sets a timeout for the response.
+
+**Parameters:**
+- `msecs` (number): Timeout in milliseconds
+- `callback` (Function): Optional callback when timeout occurs
+
+**Returns:** this
+
+##### response.close()
+
+Closes the response body. This is automatically called after the response is processed.
+
+**Example:**
+
+```javascript
+response.close();
+```
+
 ### ClientRequest
 
 Represents an HTTP request. Extends EventEmitter.
@@ -188,6 +285,97 @@ req.on('end', () => {
 ```
 
 #### Methods
+
+##### request.setHeader(name, value)
+
+Sets a single header value.
+
+**Parameters:**
+- `name` (string): Header name
+- `value` (string | number): Header value
+
+**Returns:** this
+
+**Example:**
+
+```javascript
+req.setHeader('Content-Type', 'application/json');
+req.setHeader('X-Custom-Header', 'value');
+```
+
+##### request.getHeader(name)
+
+Gets a header value.
+
+**Parameters:**
+- `name` (string): Header name (case-insensitive)
+
+**Returns:** string | undefined - The header value or undefined if not set
+
+**Example:**
+
+```javascript
+const contentType = req.getHeader('Content-Type');
+console.println('Content-Type:', contentType);
+```
+
+##### request.removeHeader(name)
+
+Removes a header.
+
+**Parameters:**
+- `name` (string): Header name (case-insensitive)
+
+**Returns:** this
+
+**Example:**
+
+```javascript
+req.removeHeader('X-Custom-Header');
+```
+
+##### request.hasHeader(name)
+
+Checks if a header exists.
+
+**Parameters:**
+- `name` (string): Header name (case-insensitive)
+
+**Returns:** boolean - `true` if the header exists
+
+**Example:**
+
+```javascript
+if (req.hasHeader('Content-Type')) {
+    console.println('Content-Type is set');
+}
+```
+
+##### request.getHeaders()
+
+Gets all headers as an object.
+
+**Returns:** Object - All headers with original case names
+
+**Example:**
+
+```javascript
+const headers = req.getHeaders();
+console.println('Headers:', JSON.stringify(headers));
+```
+
+##### request.getHeaderNames()
+
+Gets all header names.
+
+**Returns:** Array<string> - Array of header names with original case
+
+**Example:**
+
+```javascript
+const names = req.getHeaderNames();
+console.println('Header names:', names.join(', '));
+```
 
 ##### request.write(chunk[, encoding][, callback])
 
@@ -244,76 +432,6 @@ Destroys the request.
 
 ```javascript
 req.destroy(new Error("Request cancelled"));
-```
-
-### Response
-
-Represents an HTTP response.
-
-#### Properties
-
-- `ok` (boolean): `true` if status code is 200-299
-- `statusCode` (number): HTTP status code
-- `statusMessage` (string): HTTP status message (e.g., "200 OK")
-- `headers` (Object): Response headers
-- `proto` (string): HTTP protocol version (e.g., "HTTP/1.1")
-- `protoMajor` (number): Major version number
-- `protoMinor` (number): Minor version number
-
-**Example:**
-
-```javascript
-http.get("http://example.com", (response) => {
-    console.println("OK:", response.ok);
-    console.println("Status Code:", response.statusCode);
-    console.println("Status Message:", response.statusMessage);
-    console.println("Content-Type:", response.headers["Content-Type"]);
-    console.println("Protocol:", response.proto);
-});
-```
-
-#### Methods
-
-##### response.json()
-
-Parses the response body as JSON.
-
-**Returns:** Object - Parsed JSON object or `null` on error
-
-**Example:**
-
-```javascript
-http.get("http://example.com/api", (response) => {
-    const data = response.json();
-    console.println("Message:", data.message);
-});
-```
-
-##### response.string()
-
-Reads the response body as a string.
-
-**Returns:** string - Response body text or empty string on error
-
-**Example:**
-
-```javascript
-http.get("http://example.com", (response) => {
-    const body = response.string();
-    console.println("Body:", body);
-});
-```
-
-##### response.close()
-
-Closes the response body. This is automatically called after the response is processed.
-
-**Returns:** Error | null
-
-**Example:**
-
-```javascript
-response.close();
 ```
 
 ## Complete Usage Examples
@@ -487,12 +605,12 @@ http.get(options, (response) => {
     const {statusCode, statusMessage} = response;
     console.println("Status Code:", statusCode);
     console.println("Status:", statusMessage);
-    console.println("Body:", response.string());
+    console.println("Body:", response.text());
     
-    // Access response headers
-    const contentLength = response.headers["Content-Length"];
-    const contentType = response.headers["Content-Type"];
-    const dateHeader = response.headers["Date"];
+    // Access response headers (note: header keys are lowercase)
+    const contentLength = response.headers["content-length"];
+    const contentType = response.headers["content-type"];
+    const dateHeader = response.headers["date"];
     
     console.println("Content-Length:", contentLength);
     console.println("Content-Type:", contentType);
@@ -540,10 +658,27 @@ Request failed!
 - The `Agent` class manages connection pooling and reuse
 - All requests are executed asynchronously using `setImmediate()`
 - The `response.ok` property provides a convenient way to check for successful status codes (200-299)
-- Headers are case-sensitive when accessing them from the response
+- Response header keys are stored in lowercase for consistency
+- Request headers set via `setHeader()` preserve their original case but are compared case-insensitively
 - When using `write()` multiple times, data is accumulated before being sent
+- The `IncomingMessage` class wraps Go's HTTP response and provides a Node.js-compatible interface
+
+## API Compatibility
+
+This module provides a subset of Node.js's `http` module API with the following key classes:
+
+- `Agent` - Connection pooling manager
+- `ClientRequest` - Outgoing HTTP request (extends EventEmitter)
+- `IncomingMessage` - HTTP response wrapper (extends EventEmitter)
+
+Key methods:
+- `http.request()` - Create an HTTP request
+- `http.get()` - Convenience method for GET requests
+- `request.setHeader()`, `getHeader()`, `removeHeader()`, `hasHeader()` - Header management
+- `request.write()`, `end()` - Send request data
+- `response.json()`, `text()` - Parse response body
 
 ## Dependencies
 
 - Go's standard `net/http` package
-- JSH EventEmitter
+- JSH EventEmitter (built-in)
