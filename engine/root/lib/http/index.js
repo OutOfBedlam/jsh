@@ -1,6 +1,7 @@
 'use strict';
 
 const _http = require('@jsh/http');
+const EventEmitter = require('/lib/events');
 
 class Agent {
     constructor(opts = {}) {

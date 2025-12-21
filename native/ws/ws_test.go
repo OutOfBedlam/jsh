@@ -219,7 +219,7 @@ func TestWebSocketConnection(t *testing.T) {
 					console.println("got: "+m.data);
 				}
 				ws.on("message", onMessage);
-				ws.addEventListener("message", onMessage);
+				ws.addListener("message", onMessage);
 				ws.on("open", function() {
 					ws.send("trigger message");
 					setTimeout(function() { ws.close(); }, 500);

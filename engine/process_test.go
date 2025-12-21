@@ -302,3 +302,188 @@ func TestProcessShutdownHook(t *testing.T) {
 		RunTest(t, tc)
 	}
 }
+
+func TestProcessInfo(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "process_pid",
+			script: `
+				const process = require("/lib/process");
+				console.println("pid type:", typeof process.pid);
+				console.println("pid > 0:", process.pid > 0);
+			`,
+			output: []string{
+				"pid type: number",
+				"pid > 0: true",
+			},
+		},
+		{
+			name: "process_platform_arch",
+			script: `
+				const process = require("/lib/process");
+				console.println("platform:", process.platform);
+				console.println("arch:", process.arch);
+			`,
+			output: []string{
+				"platform: linux",
+				"arch: amd64",
+			},
+		},
+		{
+			name: "process_version",
+			script: `
+				const process = require("/lib/process");
+				console.println("version:", process.version);
+				console.println("has versions:", typeof process.versions);
+			`,
+			output: []string{
+				"version: jsh-1.0.0",
+				"has versions: object",
+			},
+		},
+		{
+			name: "process_stdout",
+			script: `
+				const process = require("/lib/process");
+				process.stdout.write("Hello from stdout\n");
+				console.println("stdout written");
+			`,
+			output: []string{
+				"Hello from stdout",
+				"stdout written",
+			},
+		},
+		{
+			name: "process_nextTick",
+			script: `
+				const process = require("/lib/process");
+				console.println("before nextTick");
+				process.nextTick(() => {
+					console.println("in nextTick");
+				});
+				console.println("after nextTick");
+			`,
+			output: []string{
+				"before nextTick",
+				"after nextTick",
+				"in nextTick",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessResources(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "process_memoryUsage",
+			script: `
+				const process = require("/lib/process");
+				const mem = process.memoryUsage();
+				console.println("has rss:", typeof mem.rss);
+				console.println("has heapTotal:", typeof mem.heapTotal);
+				console.println("has heapUsed:", typeof mem.heapUsed);
+			`,
+			output: []string{
+				"has rss: number",
+				"has heapTotal: number",
+				"has heapUsed: number",
+			},
+		},
+		{
+			name: "process_cpuUsage",
+			script: `
+				const process = require("/lib/process");
+				const cpu = process.cpuUsage();
+				console.println("has user:", typeof cpu.user);
+				console.println("has system:", typeof cpu.system);
+			`,
+			output: []string{
+				"has user: number",
+				"has system: number",
+			},
+		},
+		{
+			name: "process_uptime",
+			script: `
+				const process = require("/lib/process");
+				const uptime = process.uptime();
+				console.println("uptime type:", typeof uptime);
+				console.println("uptime >= 0:", uptime >= 0);
+			`,
+			output: []string{
+				"uptime type: number",
+				"uptime >= 0: true",
+			},
+		},
+		{
+			name: "process_hrtime",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime();
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessEvents(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "process_event_emitter",
+			script: `
+				const process = require("/lib/process");
+				console.println("has on:", typeof process.on);
+				console.println("has emit:", typeof process.emit);
+				console.println("has removeListener:", typeof process.removeListener);
+			`,
+			output: []string{
+				"has on: function",
+				"has emit: function",
+				"has removeListener: function",
+			},
+		},
+		{
+			name: "process_custom_event",
+			script: `
+				const process = require("/lib/process");
+				process.on('test', (msg) => {
+					console.println("received:", msg);
+				});
+				process.emit('test', 'hello');
+			`,
+			output: []string{
+				"received: hello",
+			},
+		},
+		{
+			name: "process_multiple_listeners",
+			script: `
+				const process = require("/lib/process");
+				process.on('test', () => console.println("listener 1"));
+				process.on('test', () => console.println("listener 2"));
+				process.emit('test');
+			`,
+			output: []string{
+				"listener 1",
+				"listener 2",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}

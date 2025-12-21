@@ -1,5 +1,7 @@
 'use strict';
 
+const EventEmitter = require('/lib/events');
+const process = require('/lib/process');
 const _mqtt = require('@jsh/mqtt');
 
 class Client extends EventEmitter {
@@ -7,7 +9,7 @@ class Client extends EventEmitter {
         super();
         this.config = _mqtt.parseConfig(JSON.stringify(options));
 
-        this.raw = _mqtt.NewClient(this, require('/lib/process').dispatchEvent);
+        this.raw = _mqtt.NewClient(this, process.dispatchEvent);
         setImmediate(() => {
             let err = this.raw.connect(this.config);
             if (err instanceof Error) {

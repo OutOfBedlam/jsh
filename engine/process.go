@@ -5,17 +5,44 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 )
 
 func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 	executable, _ := os.Executable()
 	exports := module.Get("exports").(*goja.Object)
+
+	// Basic properties
 	exports.Set("env", jr.Env)
 	exports.Set("argv", append([]string{executable, jr.Name}, jr.Args...))
+	exports.Set("execPath", executable)
+	exports.Set("pid", os.Getpid())
+	exports.Set("ppid", os.Getppid())
+	exports.Set("platform", runtime.GOOS)
+	exports.Set("arch", runtime.GOARCH)
+	exports.Set("version", "jsh-1.0.0") // JSH version
+
+	// Version information
+	versions := vm.NewObject()
+	versions.Set("jsh", "1.0.0")
+	versions.Set("goja", "1.0.0")
+	versions.Set("go", runtime.Version())
+	exports.Set("versions", versions)
+
+	// Process title (can be set)
+	exports.Set("title", jr.Name)
+
+	// Streams
+	exports.Set("stdin", jr.createStdin(vm))
+	exports.Set("stdout", jr.createStdout(vm))
+	exports.Set("stderr", jr.createStderr(vm))
+
+	// Functions
 	exports.Set("addShutdownHook", jr.AddShutdownHook)
 	exports.Set("exit", doExit(vm))
 	exports.Set("exec", doExec(vm, jr.Exec))
@@ -24,7 +51,16 @@ func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 	exports.Set("now", jr.Now)
 	exports.Set("chdir", jr.Chdir)
 	exports.Set("cwd", jr.Cwd)
-	exports.Set("stdin", jr.createStdin(vm))
+	exports.Set("nextTick", doNextTick(jr.EventLoop()))
+
+	// Resource monitoring (placeholder implementations)
+	exports.Set("memoryUsage", doMemoryUsage(vm))
+	exports.Set("cpuUsage", doCpuUsage(vm))
+	exports.Set("uptime", doUptime(vm))
+	exports.Set("hrtime", doHrtime(vm))
+
+	// Signal handling support
+	exports.Set("kill", doKill(vm))
 }
 
 func (jr *JSRuntime) createStdin(vm *goja.Runtime) *goja.Object {
@@ -96,6 +132,67 @@ func (jr *JSRuntime) createStdin(vm *goja.Runtime) *goja.Object {
 	})
 
 	return stdin
+}
+
+func (jr *JSRuntime) createStdout(vm *goja.Runtime) *goja.Object {
+	stdout := vm.NewObject()
+	writer := jr.Env.Writer()
+
+	// write(data) - write data to stdout
+	stdout.Set("write", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return vm.ToValue(true)
+		}
+		data := call.Argument(0).String()
+		_, err := writer.Write([]byte(data))
+		if err != nil {
+			return vm.ToValue(false)
+		}
+		return vm.ToValue(true)
+	})
+
+	// isTTY - check if stdout is a terminal
+	stdout.Set("isTTY", func(call goja.FunctionCall) goja.Value {
+		file, ok := writer.(*os.File)
+		if !ok {
+			return vm.ToValue(false)
+		}
+		stat, err := file.Stat()
+		if err != nil {
+			return vm.ToValue(false)
+		}
+		return vm.ToValue((stat.Mode() & os.ModeCharDevice) != 0)
+	})
+
+	return stdout
+}
+
+func (jr *JSRuntime) createStderr(vm *goja.Runtime) *goja.Object {
+	stderr := vm.NewObject()
+
+	// write(data) - write data to stderr
+	stderr.Set("write", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return vm.ToValue(true)
+		}
+		data := call.Argument(0).String()
+		_, err := os.Stderr.Write([]byte(data))
+		if err != nil {
+			return vm.ToValue(false)
+		}
+		return vm.ToValue(true)
+	})
+
+	// isTTY - check if stderr is a terminal
+	stderr.Set("isTTY", func(call goja.FunctionCall) goja.Value {
+		stat, err := os.Stderr.Stat()
+		if err != nil {
+			return vm.ToValue(false)
+		}
+		return vm.ToValue((stat.Mode() & os.ModeCharDevice) != 0)
+	})
+
+	return stderr
 }
 
 func (jr *JSRuntime) Now() time.Time {
@@ -187,5 +284,112 @@ func doExit(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 		}
 		vm.Interrupt(exit)
 		return goja.Undefined()
+	}
+}
+
+func doNextTick(eventLoop *eventloop.EventLoop) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+
+		callback, ok := goja.AssertFunction(call.Argument(0))
+		if !ok {
+			return goja.Undefined()
+		}
+
+		args := make([]goja.Value, 0, len(call.Arguments)-1)
+		for i := 1; i < len(call.Arguments); i++ {
+			args = append(args, call.Arguments[i])
+		}
+
+		eventLoop.RunOnLoop(func(vm *goja.Runtime) {
+			callback(goja.Undefined(), args...)
+		})
+
+		return goja.Undefined()
+	}
+}
+
+func doMemoryUsage(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		// TODO: Implement actual memory usage tracking
+		result := vm.NewObject()
+		result.Set("rss", 0)       // Resident Set Size
+		result.Set("heapTotal", 0) // Total heap size
+		result.Set("heapUsed", 0)  // Used heap size
+		result.Set("external", 0)  // External memory
+		result.Set("arrayBuffers", 0)
+		return result
+	}
+}
+
+func doCpuUsage(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		// TODO: Implement actual CPU usage tracking
+		result := vm.NewObject()
+		result.Set("user", 0)   // User CPU time in microseconds
+		result.Set("system", 0) // System CPU time in microseconds
+		return result
+	}
+}
+
+func doUptime(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	// TODO: Track actual process start time
+	startTime := time.Now()
+	return func(call goja.FunctionCall) goja.Value {
+		uptime := time.Since(startTime).Seconds()
+		return vm.ToValue(uptime)
+	}
+}
+
+func doHrtime(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		// TODO: Implement high-resolution time
+		// Returns [seconds, nanoseconds] tuple
+		now := time.Now()
+
+		if len(call.Arguments) > 0 {
+			// Calculate difference from previous hrtime call
+			prevArray := call.Argument(0).Export()
+			if arr, ok := prevArray.([]interface{}); ok && len(arr) == 2 {
+				prevSec := int64(arr[0].(float64))
+				prevNano := int64(arr[1].(float64))
+				prevTime := time.Unix(prevSec, prevNano)
+				diff := now.Sub(prevTime)
+
+				result := vm.NewArray()
+				result.Set("0", diff.Nanoseconds()/1e9)
+				result.Set("1", diff.Nanoseconds()%1e9)
+				return result
+			}
+		}
+
+		// Return current time
+		result := vm.NewArray()
+		result.Set("0", now.Unix())
+		result.Set("1", now.Nanosecond())
+		return result
+	}
+}
+
+func doKill(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return vm.NewGoError(fmt.Errorf("kill requires a pid argument"))
+		}
+
+		pid := int(call.Argument(0).ToInteger())
+		signal := "SIGTERM"
+		if len(call.Arguments) > 1 {
+			signal = call.Argument(1).String()
+		}
+
+		// TODO: Implement actual signal sending
+		// For now, just a placeholder
+		_ = pid
+		_ = signal
+
+		return vm.ToValue(true)
 	}
 }

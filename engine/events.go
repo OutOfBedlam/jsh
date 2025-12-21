@@ -1,23 +1,12 @@
 package engine
 
 import (
-	_ "embed"
-
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 )
 
-//go:embed events.js
-var eventsJS string
-
 func NewEventLoop(opts ...eventloop.Option) *eventloop.EventLoop {
-	loop := eventloop.NewEventLoop(opts...)
-	loop.Run(func(vm *goja.Runtime) {
-		if _, err := vm.RunString(eventsJS); err != nil {
-			panic(err)
-		}
-	})
-	return loop
+	return eventloop.NewEventLoop(opts...)
 }
 
 // EventDispatchFunc
