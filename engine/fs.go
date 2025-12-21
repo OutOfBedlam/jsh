@@ -1,8 +1,12 @@
 package engine
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -71,18 +75,9 @@ func (m *FS) Mounts() []string {
 	return mounts
 }
 
-// Open implements fs.FS
-func (m *FS) Open(name string) (fs.File, error) {
+// bestMatch finds the best matching mounted fs.FS for the given path
+func (m FS) bestMatch(name string) (fs.FS, string) {
 	name = CleanPath(name)
-	// Validate path: skip leading / for fs.ValidPath check
-	validPath := strings.TrimPrefix(name, "/")
-	if validPath == "" {
-		validPath = "."
-	}
-	if !fs.ValidPath(validPath) {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
-	}
-
 	// Find the longest matching mount point
 	var bestMatch string
 	var bestFS fs.FS
@@ -103,6 +98,24 @@ func (m *FS) Open(name string) (fs.File, error) {
 			}
 		}
 	}
+
+	return bestFS, bestMatch
+}
+
+// Open implements fs.FS
+func (m *FS) Open(name string) (fs.File, error) {
+	name = CleanPath(name)
+	// Validate path: skip leading / for fs.ValidPath check
+	validPath := strings.TrimPrefix(name, "/")
+	if validPath == "" {
+		validPath = "."
+	}
+	if !fs.ValidPath(validPath) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
+	}
+
+	// Find the longest matching mount point
+	bestFS, bestMatch := m.bestMatch(name)
 
 	if bestFS == nil {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
@@ -141,6 +154,161 @@ func (m *FS) ReadFile(name string) ([]byte, error) {
 	return io.ReadAll(f)
 }
 
+// Mkdir creates a directory at the specified path
+func (m *FS) Mkdir(name string) error {
+	name = CleanPath(name)
+	// Find the longest matching mount point
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return fs.ErrNotExist
+	}
+
+	relPath := strings.TrimPrefix(name, bestMatch)
+	relPath = strings.TrimPrefix(relPath, "/")
+	if relPath == "" {
+		relPath = "."
+	}
+
+	// Check if bestFS is a local filesystem that created from os.DirFS
+	if reflect.TypeOf(bestFS).Kind() != reflect.String {
+		return fs.ErrPermission
+	}
+	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
+	err := os.MkdirAll(target, 0755)
+	if err != nil {
+		return fs.ErrInvalid
+	}
+	return nil
+}
+
+// Rmdir removes a directory at the specified path
+func (m *FS) Rmdir(name string) error {
+	name = CleanPath(name)
+	// Find the longest matching mount point
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return fs.ErrNotExist
+	}
+
+	relPath := strings.TrimPrefix(name, bestMatch)
+	relPath = strings.TrimPrefix(relPath, "/")
+	if relPath == "" {
+		relPath = "."
+	}
+
+	// Check if bestFS is a local filesystem that created from os.DirFS
+	if reflect.TypeOf(bestFS).Kind() != reflect.String {
+		return fs.ErrPermission
+	}
+	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
+	err := os.Remove(target)
+	if err != nil {
+		return fs.ErrInvalid
+	}
+	return nil
+}
+
+// Remove removes a file at the specified path
+func (m *FS) Remove(name string) error {
+	name = CleanPath(name)
+	// Find the longest matching mount point
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return fs.ErrNotExist
+	}
+
+	relPath := strings.TrimPrefix(name, bestMatch)
+	relPath = strings.TrimPrefix(relPath, "/")
+	if relPath == "" {
+		relPath = "."
+	}
+
+	// Check if bestFS is a local filesystem that created from os.DirFS
+	if reflect.TypeOf(bestFS).Kind() != reflect.String {
+		return fs.ErrPermission
+	}
+	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
+	err := os.Remove(target)
+	if err != nil {
+		return fs.ErrInvalid
+	}
+	return nil
+}
+
+// Rename renames a file or directory from oldName to newName
+func (m *FS) Rename(oldName, newName string) error {
+	oldName = CleanPath(oldName)
+	newName = CleanPath(newName)
+
+	// Find the longest matching mount point for oldName
+	oldFS, oldMatch := m.bestMatch(oldName)
+	if oldFS == nil {
+		return fs.ErrNotExist
+	}
+
+	// Find the longest matching mount point for newName
+	newFS, newMatch := m.bestMatch(newName)
+	if newFS == nil {
+		return fs.ErrNotExist
+	}
+
+	// Ensure both paths are on the same filesystem
+	if oldFS != newFS {
+		return fs.ErrInvalid
+	}
+
+	oldRelPath := strings.TrimPrefix(oldName, oldMatch)
+	oldRelPath = strings.TrimPrefix(oldRelPath, "/")
+	if oldRelPath == "" {
+		oldRelPath = "."
+	}
+
+	newRelPath := strings.TrimPrefix(newName, newMatch)
+	newRelPath = strings.TrimPrefix(newRelPath, "/")
+	if newRelPath == "" {
+		newRelPath = "."
+	}
+
+	// Check if oldFS is a local filesystem that created from os.DirFS
+	if reflect.TypeOf(oldFS).Kind() != reflect.String {
+		return fs.ErrPermission
+	}
+	oldTarget := filepath.Join(fmt.Sprintf("%v", oldFS), oldRelPath)
+	newTarget := filepath.Join(fmt.Sprintf("%v", newFS), newRelPath)
+	err := os.Rename(oldTarget, newTarget)
+	if err != nil {
+		return fs.ErrInvalid
+	}
+	return nil
+}
+
+// WriteFile writes data to a file at the specified path
+func (m *FS) WriteFile(name string, data []byte) error {
+	name = CleanPath(name)
+	// Find the longest matching mount point
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return fs.ErrNotExist
+	}
+
+	relPath := strings.TrimPrefix(name, bestMatch)
+	relPath = strings.TrimPrefix(relPath, "/")
+	if relPath == "" {
+		relPath = "."
+	}
+
+	// Check if bestFS is a local filesystem that created from os.DirFS
+	if reflect.TypeOf(bestFS).Kind() != reflect.String {
+		return fs.ErrPermission
+	}
+	target := filepath.Join(fmt.Sprintf("%v", bestFS), relPath)
+	err := os.WriteFile(target, data, 0644)
+	if err != nil {
+		return fs.ErrInvalid
+	}
+	return nil
+}
+
 // ReadDir implements fs.ReadDirFS
 func (m *FS) ReadDir(name string) ([]fs.DirEntry, error) {
 	name = CleanPath(name)
@@ -154,25 +322,7 @@ func (m *FS) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 
 	// Find the longest matching mount point
-	var bestMatch string
-	var bestFS fs.FS
-
-	for mountPoint, filesystem := range m.mounts {
-		if mountPoint == "/" {
-			// Root mount matches everything
-			if bestMatch == "" {
-				bestMatch = "/"
-				bestFS = filesystem
-			}
-			continue
-		}
-		if name == mountPoint || strings.HasPrefix(name, mountPoint+"/") {
-			if len(mountPoint) > len(bestMatch) {
-				bestMatch = mountPoint
-				bestFS = filesystem
-			}
-		}
-	}
+	bestFS, bestMatch := m.bestMatch(name)
 
 	if bestFS == nil {
 		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
