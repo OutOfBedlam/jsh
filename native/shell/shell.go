@@ -164,7 +164,7 @@ func (sh *Shell) exec(command string, args []string) goja.Value {
 	str := strings.Join(parts, ", ")
 
 	val, _ := sh.rt.RunString(fmt.Sprintf(`(()=>{
-		const {exec} = require("process");
+		const {exec} = require("/lib/process");
 		return exec(%s);
 	})()`, str))
 

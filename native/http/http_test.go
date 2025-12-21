@@ -81,7 +81,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Process)
+		jr.RegisterNativeModule("@jsh/process", jr.Process)
 		jr.RegisterNativeModule("@jsh/http", Module)
 
 		if err := jr.Run(); err != nil {
@@ -110,7 +110,7 @@ func TestHttpRequest(t *testing.T) {
 			name: "http_request_get",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = new URL(env.get("testURL")+"?echo=Hello?");
 				const req = http.request(url);
 				req.end((response) => {
@@ -128,7 +128,7 @@ func TestHttpRequest(t *testing.T) {
 			name: "http_request_method_url",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = new URL(env.get("testURL")+"?echo=Hello?");
 				const req = http.request(url, {
 					host: url.host,
@@ -156,7 +156,7 @@ func TestHttpRequest(t *testing.T) {
 			name: "http_request_post",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const req = http.request(
 					env.get("testURL"),
 					{ method:"POST", headers: {"Content-Type":"application/json"} },
@@ -202,7 +202,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_string",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = env.get("testURL")+"?echo=Hi?";
 				http.get(url, (response)=> {
 				    console.println("Status Code:", response.statusCode);
@@ -218,7 +218,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_string_on",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = env.get("testURL")+"?echo=Hi?";
 				const req = http.get(url)
 				req.on("response", (response)=> {
@@ -235,7 +235,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_url",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = new URL(env.get("testURL")+"?echo=Hi?");
 				http.get(url, (response)=> {
 				    console.println("Status Code:", response.statusCode);
@@ -251,7 +251,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_string_options",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = env.get("testURL")+"?echo=Hi?";
 				const opt = {
 					headers: {"X-Test-Header": "TestValue"}
@@ -272,7 +272,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_url_options",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = new URL(env.get("testURL")+"?echo=Hi?");
 				const opt = {
 					headers: {"X-Test-Header": "TestValue"}
@@ -293,7 +293,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_options",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const opt = {
 					url: new URL(env.get("testURL")+"?echo=Hi?"),
 					headers: {"X-Test-Header": "TestValue"},
@@ -331,7 +331,7 @@ func TestHttpGet(t *testing.T) {
 			name: "http_get_not_found",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const url = env.get("testURL")+"/notfound";
 				http.get(url, (response)=> {
 				    console.println("Status Code:", response.statusCode);
@@ -362,7 +362,7 @@ func TestHttpHeaders(t *testing.T) {
 			name: "header_set_get",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const req = http.request(env.get("testURL"));
 				
 				// Set headers
@@ -393,7 +393,7 @@ func TestHttpHeaders(t *testing.T) {
 			name: "header_has_remove",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const req = http.request(env.get("testURL"));
 				
 				req.setHeader("X-Test-Header", "value");
@@ -415,7 +415,7 @@ func TestHttpHeaders(t *testing.T) {
 			name: "header_get_all",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const req = http.request(env.get("testURL"));
 				
 				req.setHeader("Content-Type", "text/plain");
@@ -439,7 +439,7 @@ func TestHttpHeaders(t *testing.T) {
 			name: "header_chaining",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const req = http.request(env.get("testURL"))
 					.setHeader("Content-Type", "application/json")
 					.setHeader("Accept", "application/json")
@@ -477,7 +477,7 @@ func TestIncomingMessage(t *testing.T) {
 			name: "response_properties",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				http.get(env.get("testURL") + "?echo=test", (response) => {
 					console.println("statusCode:", response.statusCode);
@@ -503,7 +503,7 @@ func TestIncomingMessage(t *testing.T) {
 			name: "response_ok_status",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				http.get(env.get("testURL") + "?echo=ok", (response) => {
 					console.println("200 ok:", response.ok);
@@ -522,7 +522,7 @@ func TestIncomingMessage(t *testing.T) {
 			name: "response_json",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const req = http.request(env.get("testURL"), {
 					method: "POST",
@@ -546,7 +546,7 @@ func TestIncomingMessage(t *testing.T) {
 			name: "response_text",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				http.get(env.get("testURL") + "?echo=HelloWorld", (response) => {
 					const text = response.text();
@@ -563,7 +563,7 @@ func TestIncomingMessage(t *testing.T) {
 			name: "response_headers_lowercase",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				http.get(env.get("testURL") + "?echo=test", {
 					headers: {"X-Test-Header": "TestValue"}
@@ -588,7 +588,7 @@ func TestIncomingMessage(t *testing.T) {
 			name: "response_raw_headers",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				http.get(env.get("testURL") + "?echo=test", (response) => {
 					console.println("rawHeaders is array:", Array.isArray(response.rawHeaders));
@@ -622,7 +622,7 @@ func TestHttpEvents(t *testing.T) {
 			name: "request_events",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const req = http.request(env.get("testURL"));
 				
@@ -652,7 +652,7 @@ func TestHttpEvents(t *testing.T) {
 			name: "error_event",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const req = http.request(env.get("testURL"), {
 					method: "POST",
@@ -694,7 +694,7 @@ func TestHttpAgent(t *testing.T) {
 			name: "agent_reuse",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const agent = new http.Agent();
 				
@@ -719,7 +719,7 @@ func TestHttpAgent(t *testing.T) {
 			name: "agent_per_request",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				// Without explicit agent (creates default agent per request)
 				http.get(env.get("testURL"), (response) => {
@@ -756,7 +756,7 @@ func TestHttpEdgeCases(t *testing.T) {
 			name: "multiple_writes",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const req = http.request(env.get("testURL"), {
 					method: "POST",
@@ -782,7 +782,7 @@ func TestHttpEdgeCases(t *testing.T) {
 			name: "empty_response",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				http.get(env.get("testURL"), (response) => {
 					console.println("statusCode:", response.statusCode);
@@ -799,7 +799,7 @@ func TestHttpEdgeCases(t *testing.T) {
 			name: "url_with_query",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const url = new URL(env.get("testURL") + "?echo=test&param=value");
 				http.get(url, (response) => {
@@ -816,7 +816,7 @@ func TestHttpEdgeCases(t *testing.T) {
 			name: "request_without_callback",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const req = http.request(env.get("testURL"));
 				req.on("response", (response) => {
@@ -832,7 +832,7 @@ func TestHttpEdgeCases(t *testing.T) {
 			name: "header_number_value",
 			script: `
 				const http = require("/lib/http");
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				
 				const req = http.request(env.get("testURL"));
 				req.setHeader("X-Number", 12345);

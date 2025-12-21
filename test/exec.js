@@ -1,2 +1,2 @@
-const {exec} = require('process');
+const {exec} = require('/lib/process');
 exec("hello.js", "世界");

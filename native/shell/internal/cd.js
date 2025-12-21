@@ -1,6 +1,6 @@
 ((targetDir) => {
     try {
-        const process = require("process");
+        const process = require("/lib/process");
         process.chdir(targetDir);
         return 0;
     } catch (e) {

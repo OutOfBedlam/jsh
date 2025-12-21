@@ -10,7 +10,7 @@ func TestProcess(t *testing.T) {
 		{
 			name: "process_env",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				console.println("PATH:", process.env.get("PATH"));
 				console.println("PWD:", process.env.get("PWD"));
 			`,
@@ -22,7 +22,7 @@ func TestProcess(t *testing.T) {
 		{
 			name: "process_argv",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				console.println("argc:", process.argv.length);
 				console.println("argv[1]:", process.argv[1]);
 			`,
@@ -34,7 +34,7 @@ func TestProcess(t *testing.T) {
 		{
 			name: "process_cwd",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				console.println("cwd:", process.cwd());
 			`,
 			output: []string{
@@ -44,7 +44,7 @@ func TestProcess(t *testing.T) {
 		{
 			name: "process_chdir",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				console.println("before:", process.cwd());
 				process.chdir("/lib");
 				console.println("after:", process.cwd());
@@ -57,7 +57,7 @@ func TestProcess(t *testing.T) {
 		{
 			name: "process_chdir_relative",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				console.println("before:", process.cwd());
 				process.chdir("../lib");
 				console.println("after:", process.cwd());
@@ -71,7 +71,7 @@ func TestProcess(t *testing.T) {
 		{
 			name: "process_now",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const now = process.now();
 				console.println("type:", typeof now);
 			`,
@@ -93,7 +93,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_readLines",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const lines = process.stdin.readLines();
 				console.println("lines:", lines.length);
 				lines.forEach((line, i) => {
@@ -111,7 +111,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_readLine",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const line = process.stdin.readLine();
 				console.println("got:", line);
 			`,
@@ -123,7 +123,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_read",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const data = process.stdin.read();
 				console.println("length:", data.length);
 				const lines = data.split("\n").filter(l => l.length > 0);
@@ -138,7 +138,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_readBytes",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const data = process.stdin.readBytes(5);
 				console.println("read:", data);
 				console.println("length:", data.length);
@@ -152,7 +152,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_isTTY",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const isTTY = process.stdin.isTTY();
 				console.println("isTTY:", isTTY);
 			`,
@@ -164,7 +164,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_empty",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const lines = process.stdin.readLines();
 				const nonEmpty = lines.filter(l => l.length > 0);
 				console.println("non-empty lines:", nonEmpty.length);
@@ -177,7 +177,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_process_lines",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const lines = process.stdin.readLines();
 				let total = 0;
 				lines.forEach(line => {
@@ -196,7 +196,7 @@ func TestProcessStdin(t *testing.T) {
 		{
 			name: "stdin_filter_lines",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const lines = process.stdin.readLines();
 				const filtered = lines.filter(line => line.includes("test"));
 				console.println("found:", filtered.length);
@@ -222,7 +222,7 @@ func TestProcessExec(t *testing.T) {
 		{
 			name: "exec_basic",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const exitCode = process.exec("echo", "hello from exec");
 				console.println("exit code:", exitCode);
 			`,
@@ -234,7 +234,7 @@ func TestProcessExec(t *testing.T) {
 		{
 			name: "execString_basic",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const exitCode = process.execString("console.println('hello from execString')");
 				console.println("exit code:", exitCode);
 			`,
@@ -246,7 +246,7 @@ func TestProcessExec(t *testing.T) {
 		{
 			name: "exec_with_args",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				const exitCode = process.exec("echo", "arg1", "arg2", "arg3");
 				console.println("done");
 			`,
@@ -267,7 +267,7 @@ func TestProcessShutdownHook(t *testing.T) {
 		{
 			name: "shutdown_hook_single",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				process.addShutdownHook(() => {
 					console.println("cleanup");
 				});
@@ -281,7 +281,7 @@ func TestProcessShutdownHook(t *testing.T) {
 		{
 			name: "shutdown_hook_multiple",
 			script: `
-				const process = require("process");
+				const process = require("/lib/process");
 				process.addShutdownHook(() => {
 					console.println("first hook");
 				});

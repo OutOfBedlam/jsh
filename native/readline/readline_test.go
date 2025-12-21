@@ -34,7 +34,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Process)
+		jr.RegisterNativeModule("@jsh/process", jr.Process)
 		jr.RegisterNativeModule("@jsh/readline", Module)
 
 		if len(tc.input) > 0 {
@@ -96,7 +96,7 @@ func TestReadLine(t *testing.T) {
 			name: "readline-simple",
 			script: `
 			try{
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine({
 					prompt: (lineno) => { return "prompt> "},
@@ -134,7 +134,7 @@ func TestReadLineSubmitOnEnterWhen(t *testing.T) {
 			name: "readline-submit-on-enter-when",
 			script: `
 			try{
-				const process = require('process');
+				const process = require('/lib/process');
 				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine({
 					autoInput: process.env.get("auto_input"),
@@ -174,7 +174,7 @@ func TestReadLineCancel(t *testing.T) {
 			name: "readline-cancel",
 			script: `
 			try{
-				const process = require('process');
+				const process = require('/lib/process');
 				const {ReadLine} = require('/lib/readline');
 				const r = new ReadLine({
 					autoInput: process.env.get("auto_input"),

@@ -108,7 +108,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Process)
+		jr.RegisterNativeModule("@jsh/process", jr.Process)
 		jr.RegisterNativeModule("@jsh/mqtt", Module)
 
 		if err := jr.Run(); err != nil {
@@ -136,7 +136,7 @@ func TestMqttConfig(t *testing.T) {
 		{
 			name: "config",
 			script: `
-				const addr = require("process").env.get('brokerAddr');
+				const addr = require("/lib/process").env.get('brokerAddr');
 				const mqtt = require("/lib/mqtt");
 				const client = new mqtt.Client({
 					servers: [addr],
@@ -181,7 +181,7 @@ func TestMqtt(t *testing.T) {
 		{
 			name: "basic_ops",
 			script: `
-				const addr = require("process").env.get('brokerAddr');
+				const addr = require("/lib/process").env.get('brokerAddr');
 				const mqtt = require("/lib/mqtt");
 				const client = new mqtt.Client({
 					servers: [addr],

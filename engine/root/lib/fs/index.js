@@ -7,7 +7,7 @@
  * wrapping the native jsh filesystem API accessible via process.env.filesystem()
  */
 
-const process = require('process');
+const process = require('/lib/process');
 
 // Get the native filesystem object
 function getFS() {

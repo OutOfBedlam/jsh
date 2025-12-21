@@ -1,6 +1,6 @@
 const {WebSocket} = require('ws');
 const {parseArgs} = require('/lib/util');
-const args = require('process').argv.slice(2);
+const args = require('/lib/process').argv.slice(2);
 
 const opts = parseArgs(args, {
     options: {
@@ -13,7 +13,7 @@ console.println(opts);
 
 if (!opts.positionals || opts.positionals.length < 1) {
     console.println('Usage: websocket.js <ws://host:port/path>');
-    require('process').exit(1);
+    require('/lib/process').exit(1);
 }
 
 const ws = new WebSocket(opts.positionals[0]);

@@ -1,6 +1,6 @@
 (() => {
-    const env = require('process').env;
-    const args = require('process').argv.slice(2);
+    const env = require('/lib/process').env;
+    const args = require('/lib/process').argv.slice(2);
     if (args.length === 0) {
         console.println();
         return;

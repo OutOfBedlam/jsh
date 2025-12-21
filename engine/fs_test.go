@@ -722,7 +722,7 @@ func TestFS_Module(t *testing.T) {
 		// Example usage of the fs module
 
 		const fs = require('/lib/fs');
-		const process = require('process');
+		const process = require('/lib/process');
 
 		console.println('=== FS Module Example ===\n');
 
@@ -918,7 +918,7 @@ func TestFS_Module(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Process)
+		jr.RegisterNativeModule("@jsh/process", jr.Process)
 
 		if err := jr.Run(); err != nil {
 			t.Fatalf("Unexpected error: %v", err)

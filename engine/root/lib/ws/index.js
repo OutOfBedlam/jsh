@@ -9,7 +9,7 @@ class WebSocket extends EventEmitter {
         if (url === undefined || typeof url !== 'string') {
             throw new TypeError('URL must be a string, got ' + typeof url);
         }
-        this.raw = _ws.NewWebSocket(this, url, require('process').dispatchEvent);
+        this.raw = _ws.NewWebSocket(this, url, require('/lib/process').dispatchEvent);
         this.readyState = WebSocket.CONNECTING;
         this.url = url;
 

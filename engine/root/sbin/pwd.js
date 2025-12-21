@@ -1,3 +1,3 @@
 (() => {
-    console.println(require('process').cwd());
+    console.println(require('/lib/process').cwd());
 })()

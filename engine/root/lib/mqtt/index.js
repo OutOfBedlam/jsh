@@ -7,7 +7,7 @@ class Client extends EventEmitter {
         super();
         this.config = _mqtt.parseConfig(JSON.stringify(options));
 
-        this.raw = _mqtt.NewClient(this, require('process').dispatchEvent);
+        this.raw = _mqtt.NewClient(this, require('/lib/process').dispatchEvent);
         setImmediate(() => {
             let err = this.raw.connect(this.config);
             if (err instanceof Error) {

@@ -1,5 +1,5 @@
 const {sayHello} = require("demo");
-const {argv} = require("process");
+const {argv} = require("/lib/process");
 const args = argv.slice(2);
 
 sayHello(args.join(" "));

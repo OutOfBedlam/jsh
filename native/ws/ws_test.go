@@ -61,7 +61,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Process)
+		jr.RegisterNativeModule("@jsh/process", jr.Process)
 		jr.RegisterNativeModule("@jsh/ws", Module)
 
 		if len(tc.input) > 0 {
@@ -140,7 +140,7 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "connect",
 			script: `
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
@@ -162,7 +162,7 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "close",
 			script: `
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("open", function() {
@@ -181,7 +181,7 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "send_receive",
 			script: `
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				ws.on("error", function(err){
@@ -212,7 +212,7 @@ func TestWebSocketConnection(t *testing.T) {
 		{
 			name: "multiple_event_listeners",
 			script: `
-				const {env} = require('process');
+				const {env} = require('/lib/process');
 				const {WebSocket} = require("/lib/ws");
 				const ws = new WebSocket(env.get("testURL"));
 				const onMessage = function(m) {

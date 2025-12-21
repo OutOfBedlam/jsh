@@ -15,7 +15,7 @@ import (
 
 // JSH options:
 //  1. -c "script" : command to execute
-//     ex: jsh -c "console.println(require('process').argv[2])" helloworld
+//     ex: jsh -c "console.println(require('/lib/process').argv[2])" helloworld
 //  2. script file : execute script file
 //     ex: jsh script.js arg1 arg2
 //  3. no args : start interactive shell
@@ -52,7 +52,7 @@ func main() {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	engine.RegisterNativeModule("process", engine.Process)
+	engine.RegisterNativeModule("@jsh/process", engine.Process)
 	engine.RegisterNativeModule("@jsh/shell", shell.Module)
 	engine.RegisterNativeModule("@jsh/readline", readline.Module)
 	engine.RegisterNativeModule("@jsh/http", http.Module)

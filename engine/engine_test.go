@@ -38,7 +38,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		if err != nil {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
-		jr.RegisterNativeModule("process", jr.Process)
+		jr.RegisterNativeModule("@jsh/process", jr.Process)
 		conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, "\n") + "\n")
 
 		if tc.preTest != nil {
@@ -164,7 +164,7 @@ func TestSetTimeout(t *testing.T) {
 		{
 			name: "setTimeout_basic",
 			script: `
-				const {now} = require("process");
+				const {now} = require("/lib/process");
 				let t = now();
 				setTimeout(() => {
 					console.log("Timeout executed");
@@ -286,7 +286,7 @@ func TestEventLoop(t *testing.T) {
 		{
 			name: "eventloop_promise",
 			script: `
-				const {eventLoop} = require('process');
+				const {eventLoop} = require('/lib/process');
 				function doIt() {
 					return new Promise((resolve) => {
 						setImmediate(() => {

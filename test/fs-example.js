@@ -1,7 +1,7 @@
 // Example usage of the fs module
 
 const fs = require('/lib/fs');
-const process = require('process');
+const process = require('/lib/process');
 
 console.println('=== FS Module Example ===\n');
 
