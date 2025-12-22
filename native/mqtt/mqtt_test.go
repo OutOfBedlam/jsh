@@ -99,7 +99,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		conf := engine.Config{
 			Name:   tc.name,
 			Code:   tc.script,
-			Dir:    "../../test/",
+			FSTabs: []engine.FSTab{{MountPoint: "/work", Source: "../../test/"}},
 			Env:    tc.vars,
 			Reader: &bytes.Buffer{},
 			Writer: &bytes.Buffer{},

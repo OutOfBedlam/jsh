@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -325,8 +327,8 @@ func TestProcessInfo(t *testing.T) {
 				console.println("arch:", process.arch);
 			`,
 			output: []string{
-				"platform: linux",
-				"arch: amd64",
+				fmt.Sprintf("platform: %s", runtime.GOOS),
+				fmt.Sprintf("arch: %s", runtime.GOARCH),
 			},
 		},
 		{

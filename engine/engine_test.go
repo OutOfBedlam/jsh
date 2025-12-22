@@ -23,9 +23,9 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
 		conf := Config{
-			Name: tc.name,
-			Code: tc.script,
-			Dir:  "../test/",
+			Name:   tc.name,
+			Code:   tc.script,
+			FSTabs: []FSTab{{MountPoint: "/work", Source: "../test/"}},
 			Env: map[string]any{
 				"PATH": "/lib:/work:/sbin",
 				"PWD":  "/work",
@@ -76,12 +76,12 @@ func TestMain(m *testing.M) {
 		bin := "../tmp/jsh"
 		if source != "" {
 			args = append([]string{
-				"-d", "../test/",
+				"-v", "/work=../test/",
 				"-c", source,
 			}, args...)
 		} else {
 			args = append([]string{
-				"-d", "../test/",
+				"-v", "/work=../test/",
 			}, args...)
 		}
 		return exec.Command(bin, args...), nil

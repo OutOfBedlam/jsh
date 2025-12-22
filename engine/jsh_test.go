@@ -57,7 +57,7 @@ func TestJshMain(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Prepare command: go run main.go <args>
-			cmdArgs := append([]string{"-d", "../test/"}, tt.args...)
+			cmdArgs := append([]string{"-v", "/work=../test/"}, tt.args...)
 			cmd := exec.Command("../tmp/jsh", cmdArgs...)
 
 			// Setup stdin with bytes.Buffer

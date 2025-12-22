@@ -20,19 +20,15 @@ import (
 
 func New(conf Config) (*JSRuntime, error) {
 	fileSystem := NewFS()
-	fileSystem.Mount("/", Root(conf.Dev))
-
-	if conf.Mount != nil {
-		if err := conf.Mount(fileSystem); err != nil {
-			return nil, fmt.Errorf("error mounting filesystem: %v", err)
-		}
-	} else {
-		if dfs, err := DirFS(conf.Dir); err != nil {
-			fmt.Println("Error setting up filesystem:", err.Error())
-			os.Exit(1)
+	for _, tab := range conf.FSTabs {
+		if dirfs, err := DirFS(tab.Source); err != nil {
+			return nil, fmt.Errorf("error mounting %s to %s: %v", tab.Source, tab.MountPoint, err)
 		} else {
-			fileSystem.Mount("/work", dfs)
+			fileSystem.Mount(tab.MountPoint, dirfs)
 		}
+	}
+	if fileSystem.mounts["/"] == nil {
+		fileSystem.Mount("/", Root(""))
 	}
 
 	var reader io.Reader = os.Stdin
@@ -47,7 +43,7 @@ func New(conf Config) (*JSRuntime, error) {
 	if conf.ExecBuilder != nil {
 		execBuilderFunc = conf.ExecBuilder
 	} else {
-		execBuilderFunc = execBuilder(conf.Dir, conf.Dev)
+		execBuilderFunc = execBuilder(conf.FSTabs)
 	}
 	opts := []EnvOption{
 		WithFilesystem(fileSystem),
@@ -161,7 +157,7 @@ func Root(devDir string) fs.FS {
 }
 
 // execBuilder builds an exec.Cmd to run jsh with the given code and args.
-func execBuilder(dir string, devDir string) ExecBuilderFunc {
+func execBuilder(fstabs []FSTab) ExecBuilderFunc {
 	useSecretBox := os.Getenv("JSH_NO_SECRET_BOX") != "1"
 	return func(code string, args []string, env map[string]any) (*exec.Cmd, error) {
 		self, err := os.Executable()
@@ -172,11 +168,10 @@ func execBuilder(dir string, devDir string) ExecBuilderFunc {
 		// so use secret box to pass it to the child process.
 		if useSecretBox {
 			conf := Config{
-				Code: code,
-				Args: args,
-				Dir:  dir,
-				Dev:  devDir,
-				Env:  env,
+				Code:   code,
+				Args:   args,
+				FSTabs: fstabs,
+				Env:    env,
 			}
 			secretBox, err := NewSecretBox(conf)
 			if err != nil {
@@ -186,16 +181,16 @@ func execBuilder(dir string, devDir string) ExecBuilderFunc {
 			return execCmd, nil
 		} else {
 			opts := []string{}
-			if devDir != "" {
-				opts = append(opts, "-dev", devDir)
+			for _, tab := range fstabs {
+				opts = append(opts, "-v", fmt.Sprintf("%s=%s", tab.MountPoint, tab.Source))
 			}
 			if code != "" {
-				opts = append(opts, "-c", code, "-d", dir)
+				opts = append(opts, "-c", code)
 				if len(args) > 0 {
 					opts = append(opts, args...)
 				}
 			} else {
-				opts = append(opts, "-d", dir, args[0])
+				opts = append(opts, args[0])
 				if args := args[1:]; len(args) > 0 {
 					opts = append(opts, args...)
 				}
@@ -229,18 +224,48 @@ func DirFS(dir string) (fileSystem fs.FS, err error) {
 }
 
 type Config struct {
-	Name string         `json:"name"`
-	Code string         `json:"code"`
-	Args []string       `json:"args"`
-	Env  map[string]any `json:"env"`
-	Dir  string         `json:"dir"`
-	Dev  string         `json:"dev"`
+	Name   string         `json:"name"`
+	Code   string         `json:"code"`
+	Args   []string       `json:"args"`
+	Env    map[string]any `json:"env"`
+	FSTabs []FSTab        `json:"fstabs,omitempty"`
 
 	Default     string          `json:"default,omitempty"`
 	Writer      io.Writer       `json:"-"`
 	Reader      io.Reader       `json:"-"`
 	ExecBuilder ExecBuilderFunc `json:"-"`
-	Mount       MountFunc       `json:"-"`
+}
+
+type FSTab struct {
+	MountPoint string `json:"mountPoint"`
+	Source     string `json:"source"`
+	Type       string `json:"type,omitempty"`
+	Options    string `json:"options,omitempty"`
+}
+
+type FSTabs []FSTab
+
+func (m *FSTabs) String() string {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err.Error()
+	}
+	return string(b)
+}
+
+// Set(stirng) error is required to implement flag.Value interface.
+// Set parses and adds a new FSTab from the given string.
+// The format is /mountpoint=source
+func (m *FSTabs) Set(value string) error {
+	tokens := strings.SplitN(value, "=", 2)
+	if len(tokens) != 2 {
+		return fmt.Errorf("invalid mount option: %s", value)
+	}
+	*m = append(*m, FSTab{
+		MountPoint: tokens[0],
+		Source:     tokens[1],
+	})
+	return nil
 }
 
 type SecretBox struct {

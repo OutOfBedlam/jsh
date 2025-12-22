@@ -21,10 +21,10 @@ import (
 //  3. no args : start interactive shell
 //     ex: jsh
 func main() {
+	var fstabs engine.FSTabs
 	src := flag.String("c", "", "command to execute")
-	dir := flag.String("d", ".", "working directory")
 	scf := flag.String("s", "", "configured file to start from")
-	dev := flag.String("dev", "", "use development filesystem")
+	flag.Var(&fstabs, "v", "volume to mount (format: /mountpoint=source)")
 	flag.Parse()
 
 	conf := engine.Config{}
@@ -37,8 +37,7 @@ func main() {
 	} else {
 		// otherwise, use command args to build ExecPass
 		conf.Code = *src
-		conf.Dir = *dir
-		conf.Dev = *dev
+		conf.FSTabs = fstabs
 		conf.Args = flag.Args()
 		conf.Default = "/sbin/shell.js" // default script to run if no args
 		conf.Env = map[string]any{

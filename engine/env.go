@@ -26,8 +26,6 @@ type Env interface {
 // if code is non-empty, it indicates that the code is being executed.
 type ExecBuilderFunc func(code string, args []string, env map[string]any) (*exec.Cmd, error)
 
-type MountFunc func(fileSystem *FS) error
-
 func LoadSource(env Env, moduleName string) ([]byte, error) {
 	var fileSystem fs.FS = env.Filesystem()
 	if fileSystem == nil {

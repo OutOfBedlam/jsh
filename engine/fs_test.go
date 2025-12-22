@@ -903,9 +903,9 @@ func TestFS_Module(t *testing.T) {
 
 	t.Run(tc.name, func(t *testing.T) {
 		conf := Config{
-			Name: tc.name,
-			Code: tc.script,
-			Dir:  "../test/",
+			Name:   tc.name,
+			Code:   tc.script,
+			FSTabs: []FSTab{{MountPoint: "/work", Source: "../test/"}},
 			Env: map[string]any{
 				"PATH": "/lib:/work:/sbin",
 				"PWD":  "/work",
