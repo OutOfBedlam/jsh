@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -258,7 +259,13 @@ func TestWebSocketConnectionError(t *testing.T) {
 				});
 			`,
 			output: []string{
-				"err: dial tcp 127.0.0.1:9999: connect: connection refused",
+				func() string {
+					if runtime.GOOS == "windows" {
+						return "err: dial tcp 127.0.0.1:9999: connectex: No connection could be made because the target machine actively refused it."
+					} else {
+						return "err: dial tcp 127.0.0.1:9999: connect: connection refused"
+					}
+				}(),
 			},
 		},
 		{
@@ -274,7 +281,13 @@ func TestWebSocketConnectionError(t *testing.T) {
 				}, 500);
 			`,
 			output: []string{
-				"err: dial tcp 127.0.0.1:9999: connect: connection refused",
+				func() string {
+					if runtime.GOOS == "windows" {
+						return "err: dial tcp 127.0.0.1:9999: connectex: No connection could be made because the target machine actively refused it."
+					} else {
+						return "err: dial tcp 127.0.0.1:9999: connect: connection refused"
+					}
+				}(),
 				"err: websocket is not open",
 			},
 		},

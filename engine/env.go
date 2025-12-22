@@ -26,6 +26,18 @@ type Env interface {
 // if code is non-empty, it indicates that the code is being executed.
 type ExecBuilderFunc func(code string, args []string, env map[string]any) (*exec.Cmd, error)
 
+func PathResolver(env Env, base, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return path
+	}
+	// require.DefaultPathResolver(base, target)
+	p := filepath.Join(filepath.ToSlash(base), filepath.Base(path))
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		p = resolved
+	}
+	return filepath.ToSlash(p)
+}
+
 func LoadSource(env Env, moduleName string) ([]byte, error) {
 	moduleName = filepath.ToSlash(moduleName) // for Windows compatibility
 	var fileSystem fs.FS = env.Filesystem()
@@ -45,7 +57,9 @@ func LoadSource(env Env, moduleName string) ([]byte, error) {
 		}
 		if v := env.Get("PATH"); v != nil {
 			for _, p := range strings.Split(v.(string), ":") {
-				findings = append(findings, filepath.Join(p, moduleName))
+				p = filepath.Join(p, moduleName)
+				p = filepath.ToSlash(p)
+				findings = append(findings, p)
 			}
 		}
 		for _, path := range findings {
@@ -100,6 +114,7 @@ func loadSourceFromDir(fileSystem fs.FS, moduleName string) ([]byte, error) {
 		}
 		if mainEntry.Main != "" {
 			mainPath := filepath.Join(moduleName, mainEntry.Main)
+			mainPath = filepath.ToSlash(mainPath)
 			if !strings.HasSuffix(mainPath, ".js") {
 				mainPath += ".js"
 			}

@@ -88,7 +88,7 @@ func (jr *JSRuntime) loadSource(moduleName string) ([]byte, error) {
 }
 
 func (jr *JSRuntime) pathResolver(base, target string) string {
-	return require.DefaultPathResolver(base, target)
+	return PathResolver(jr.Env, base, target)
 }
 
 func (jr *JSRuntime) AddShutdownHook(hook func()) {

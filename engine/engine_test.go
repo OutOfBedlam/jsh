@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -67,13 +68,23 @@ func RunTest(t *testing.T, tc TestCase) {
 var testExecBuilder ExecBuilderFunc
 
 func TestMain(m *testing.M) {
-	cmd := exec.Command("go", "build", "-o", "../tmp/jsh", "..")
+	args := []string{"build", "-o"}
+	if runtime.GOOS == "windows" {
+		args = append(args, "../tmp/jsh.exe")
+	} else {
+		args = append(args, "../tmp/jsh")
+	}
+	args = append(args, "..")
+	cmd := exec.Command("go", args...)
 	if err := cmd.Run(); err != nil {
 		fmt.Println("Failed to build jsh binary for tests:", err)
 		os.Exit(2)
 	}
 	testExecBuilder = func(source string, args []string, env map[string]any) (*exec.Cmd, error) {
 		bin := "../tmp/jsh"
+		if runtime.GOOS == "windows" {
+			bin = "../tmp/jsh.exe"
+		}
 		if source != "" {
 			args = append([]string{
 				"-v", "/work=../test/",
