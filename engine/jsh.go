@@ -19,16 +19,24 @@ import (
 )
 
 func New(conf Config) (*JSRuntime, error) {
+	if !conf.FSTabs.HasMountPoint("/") {
+		conf.FSTabs = append([]FSTab{{MountPoint: "/", FS: Root("")}}, conf.FSTabs...)
+	}
+	if conf.FSTabHook != nil {
+		conf.FSTabs = conf.FSTabHook(conf.FSTabs)
+	}
+
 	fileSystem := NewFS()
 	for _, tab := range conf.FSTabs {
-		if dirfs, err := DirFS(tab.Source); err != nil {
-			return nil, fmt.Errorf("error mounting %s to %s: %v", tab.Source, tab.MountPoint, err)
+		if tab.FS == nil {
+			if dirfs, err := DirFS(tab.Source); err != nil {
+				return nil, fmt.Errorf("error mounting %s to %s: %v", tab.Source, tab.MountPoint, err)
+			} else {
+				fileSystem.Mount(tab.MountPoint, dirfs)
+			}
 		} else {
-			fileSystem.Mount(tab.MountPoint, dirfs)
+			fileSystem.Mount(tab.MountPoint, tab.FS)
 		}
-	}
-	if fileSystem.mounts["/"] == nil {
-		fileSystem.Mount("/", Root(""))
 	}
 
 	var reader io.Reader = os.Stdin
@@ -228,30 +236,22 @@ type Config struct {
 	Code   string         `json:"code"`
 	Args   []string       `json:"args"`
 	Env    map[string]any `json:"env"`
-	FSTabs []FSTab        `json:"fstabs,omitempty"`
+	FSTabs FSTabs         `json:"fstabs,omitempty"`
 
-	Default     string          `json:"default,omitempty"`
-	Writer      io.Writer       `json:"-"`
-	Reader      io.Reader       `json:"-"`
-	ExecBuilder ExecBuilderFunc `json:"-"`
+	Default     string              `json:"default,omitempty"`
+	Writer      io.Writer           `json:"-"`
+	Reader      io.Reader           `json:"-"`
+	ExecBuilder ExecBuilderFunc     `json:"-"`
+	FSTabHook   func(FSTabs) FSTabs `json:"-"`
 }
 
 type FSTab struct {
 	MountPoint string `json:"mountPoint"`
 	Source     string `json:"source"`
-	Type       string `json:"type,omitempty"`
-	Options    string `json:"options,omitempty"`
+	FS         fs.FS  `json:"-"`
 }
 
 type FSTabs []FSTab
-
-func (m *FSTabs) String() string {
-	b, err := json.Marshal(m)
-	if err != nil {
-		return err.Error()
-	}
-	return string(b)
-}
 
 // Set(stirng) error is required to implement flag.Value interface.
 // Set parses and adds a new FSTab from the given string.
@@ -265,6 +265,53 @@ func (m *FSTabs) Set(value string) error {
 		MountPoint: tokens[0],
 		Source:     tokens[1],
 	})
+	return nil
+}
+
+func (m FSTabs) HasMountPoint(mountPoint string) bool {
+	for _, tab := range m {
+		if tab.MountPoint == mountPoint {
+			return true
+		}
+	}
+	return false
+}
+
+func (m FSTabs) String() string {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err.Error()
+	}
+	return string(b)
+}
+
+func (m FSTabs) MarshalJSON() ([]byte, error) {
+	type fstabAlias FSTab
+	aliasList := []fstabAlias{}
+	for _, tab := range m {
+		if tab.MountPoint == "" || tab.Source == "" {
+			continue
+		}
+		aliasList = append(aliasList, fstabAlias{
+			MountPoint: tab.MountPoint,
+			Source:     tab.Source,
+		})
+	}
+	return json.Marshal(aliasList)
+}
+
+func (m *FSTabs) UnmarshalJSON(data []byte) error {
+	type fstabAlias FSTab
+	aliasList := []fstabAlias{}
+	if err := json.Unmarshal(data, &aliasList); err != nil {
+		return err
+	}
+	for _, tab := range aliasList {
+		*m = append(*m, FSTab{
+			MountPoint: tab.MountPoint,
+			Source:     tab.Source,
+		})
+	}
 	return nil
 }
 

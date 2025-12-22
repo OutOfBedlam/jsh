@@ -27,6 +27,7 @@ type Env interface {
 type ExecBuilderFunc func(code string, args []string, env map[string]any) (*exec.Cmd, error)
 
 func LoadSource(env Env, moduleName string) ([]byte, error) {
+	moduleName = filepath.ToSlash(moduleName) // for Windows compatibility
 	var fileSystem fs.FS = env.Filesystem()
 	if fileSystem == nil {
 		return nil, fmt.Errorf("no filesystem available to load module: %s", moduleName)
