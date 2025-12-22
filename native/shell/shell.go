@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/OutOfBedlam/jsh/log"
+	jshrl "github.com/OutOfBedlam/jsh/native/readline"
 	"github.com/OutOfBedlam/jsh/native/shell/internal"
 	"github.com/dop251/goja"
 	"github.com/hymkor/go-multiline-ny"
@@ -28,7 +29,7 @@ func shell(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 	return func(call goja.ConstructorCall) *goja.Object {
 		shell := &Shell{
 			rt:      rt,
-			history: NewHistory("history", 100),
+			history: jshrl.NewHistory("history", 100),
 		}
 
 		obj := rt.NewObject()
@@ -39,7 +40,7 @@ func shell(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 
 type Shell struct {
 	rt      *goja.Runtime
-	history *History
+	history *jshrl.History
 }
 
 var banner = "\n" +

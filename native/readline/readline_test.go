@@ -25,7 +25,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		conf := engine.Config{
 			Name:   tc.name,
 			Code:   tc.script,
-			FSTabs: []engine.FSTab{{MountPoint: "/work", Source: "../../test/"}},
+			FSTabs: []engine.FSTab{{MountPoint: "/", Source: "../root/"}, {MountPoint: "/work", Source: "../../test/"}},
 			Env:    tc.vars,
 			Reader: &bytes.Buffer{},
 			Writer: &bytes.Buffer{},
@@ -103,11 +103,12 @@ func TestReadLine(t *testing.T) {
 					autoInput: env.get("auto_input"),
 				});
 				console.println("PS:", r.options.prompt(0));
-				const line = r.readLine();
-				if (line instanceof Error) {
-					throw line;
+				const line1 = r.readLine();
+				if (line1 instanceof Error) {
+					throw line1;
 				}
-				console.println("OK:", line);
+				console.println("OK:", line1);
+				r.addHistory(line1);
 			} catch(e) {
 				console.println("ERR:", e.message);
 			}

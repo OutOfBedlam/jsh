@@ -17,23 +17,30 @@ func Module(rt *goja.Runtime, module *goja.Object) {
 	m.Set("NewReadLine", NewReadLine(rt))
 }
 
-func NewReadLine(vm *goja.Runtime) func(obj *goja.Object, opt *goja.Object) *Reader {
-	return func(obj *goja.Object, opt *goja.Object) *Reader {
-		reader := &Reader{
-			vm: vm,
-			ed: &multiline.Editor{},
+func NewReadLine(vm *goja.Runtime) func(obj *goja.Object, opt Options) *Reader {
+	return func(obj *goja.Object, opt Options) *Reader {
+		if opt.History == "" {
+			opt.History = "readline"
 		}
+		reader := &Reader{
+			vm:      vm,
+			ed:      &multiline.Editor{},
+			history: NewHistory(opt.History, 100),
+		}
+		reader.ed.SetHistory(reader.history)
 		return reader
 	}
 }
 
 type Reader struct {
-	vm     *goja.Runtime
-	ed     *multiline.Editor
-	cancel context.CancelFunc
+	vm      *goja.Runtime
+	ed      *multiline.Editor
+	cancel  context.CancelFunc
+	history *History
 }
 
 type Options struct {
+	History           string
 	AutoInput         []string
 	Prompt            goja.Callable
 	SubmitOnEnterWhen goja.Callable
@@ -92,4 +99,8 @@ func (r *Reader) Close() {
 	if cancel := r.cancel; cancel != nil {
 		cancel()
 	}
+}
+
+func (r *Reader) AddHistory(line string) {
+	r.history.Add(line)
 }

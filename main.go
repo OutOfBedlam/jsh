@@ -6,11 +6,7 @@ import (
 	"os"
 
 	"github.com/OutOfBedlam/jsh/engine"
-	"github.com/OutOfBedlam/jsh/native/http"
-	"github.com/OutOfBedlam/jsh/native/mqtt"
-	"github.com/OutOfBedlam/jsh/native/readline"
-	"github.com/OutOfBedlam/jsh/native/shell"
-	"github.com/OutOfBedlam/jsh/native/ws"
+	"github.com/OutOfBedlam/jsh/native"
 )
 
 // JSH options:
@@ -46,17 +42,13 @@ func main() {
 			"PWD":  "/work",
 		}
 	}
+	native.ConfigureRoot(&conf)
 	engine, err := engine.New(conf)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
 	}
-	engine.RegisterNativeModule("@jsh/process", engine.Process)
-	engine.RegisterNativeModule("@jsh/shell", shell.Module)
-	engine.RegisterNativeModule("@jsh/readline", readline.Module)
-	engine.RegisterNativeModule("@jsh/http", http.Module)
-	engine.RegisterNativeModule("@jsh/ws", ws.Module)
-	engine.RegisterNativeModule("@jsh/mqtt", mqtt.Module)
+	native.Enable(engine)
 
 	os.Exit(engine.Main())
 }

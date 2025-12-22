@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	jshrl "github.com/OutOfBedlam/jsh/native/readline"
 	"github.com/dop251/goja"
 	"github.com/hymkor/go-multiline-ny"
 	"github.com/mattn/go-colorable"
@@ -14,14 +15,14 @@ import (
 
 type Repl struct {
 	rt      *goja.Runtime
-	history *History
+	history *jshrl.History
 }
 
 func repl(rt *goja.Runtime) func(goja.ConstructorCall) *goja.Object {
 	return func(call goja.ConstructorCall) *goja.Object {
 		repl := &Repl{
 			rt:      rt,
-			history: NewHistory("repl_history", 100),
+			history: jshrl.NewHistory("repl_history", 100),
 		}
 		obj := rt.NewObject()
 		obj.Set("loop", repl.Loop)

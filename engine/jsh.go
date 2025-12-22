@@ -2,7 +2,6 @@ package engine
 
 import (
 	"crypto/rand"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,13 +18,12 @@ import (
 )
 
 func New(conf Config) (*JSRuntime, error) {
-	if !conf.FSTabs.HasMountPoint("/") {
-		conf.FSTabs = append([]FSTab{{MountPoint: "/", FS: Root("")}}, conf.FSTabs...)
-	}
-	if conf.FSTabHook != nil {
-		conf.FSTabs = conf.FSTabHook(conf.FSTabs)
+	// Apply FSTab configuration hooks
+	for _, hook := range conf.fstabHooks {
+		conf.FSTabs = hook(conf.FSTabs)
 	}
 
+	// Build filesystem from FSTabs
 	fileSystem := NewFS()
 	for _, tab := range conf.FSTabs {
 		if tab.FS == nil {
@@ -150,20 +148,6 @@ func (jr *JSRuntime) Main() int {
 	return jr.ExitCode()
 }
 
-//go:embed root/*
-var rootFS embed.FS
-
-// Root returns the root filesystem.
-func Root(devDir string) fs.FS {
-	if devDir != "" {
-		dirFS := os.DirFS(devDir)
-		return dirFS
-	} else {
-		rootFS, _ := fs.Sub(rootFS, "root")
-		return rootFS
-	}
-}
-
 // execBuilder builds an exec.Cmd to run jsh with the given code and args.
 func execBuilder(fstabs []FSTab) ExecBuilderFunc {
 	useSecretBox := os.Getenv("JSH_NO_SECRET_BOX") != "1"
@@ -238,11 +222,15 @@ type Config struct {
 	Env    map[string]any `json:"env"`
 	FSTabs FSTabs         `json:"fstabs,omitempty"`
 
-	Default     string              `json:"default,omitempty"`
-	Writer      io.Writer           `json:"-"`
-	Reader      io.Reader           `json:"-"`
-	ExecBuilder ExecBuilderFunc     `json:"-"`
-	FSTabHook   func(FSTabs) FSTabs `json:"-"`
+	Default     string                `json:"default,omitempty"`
+	Writer      io.Writer             `json:"-"`
+	Reader      io.Reader             `json:"-"`
+	ExecBuilder ExecBuilderFunc       `json:"-"`
+	fstabHooks  []func(FSTabs) FSTabs `json:"-"`
+}
+
+func (c *Config) AddFSTabHook(hook func(FSTabs) FSTabs) {
+	c.fstabHooks = append(c.fstabHooks, hook)
 }
 
 type FSTab struct {

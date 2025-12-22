@@ -25,7 +25,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		conf := Config{
 			Name:   tc.name,
 			Code:   tc.script,
-			FSTabs: []FSTab{{MountPoint: "/work", Source: "../test/"}},
+			FSTabs: []FSTab{{MountPoint: "/", Source: "../native/root/"}, {MountPoint: "/work", Source: "../test/"}},
 			Env: map[string]any{
 				"PATH": "/lib:/work:/sbin",
 				"PWD":  "/work",
