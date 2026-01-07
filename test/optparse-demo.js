@@ -1,5 +1,5 @@
 var optparse = require('optparse');
-var {argv} = require('/lib/process');
+var {argv} = require('process');
 var args = argv.slice(2);
 
 var SWITCHES = [

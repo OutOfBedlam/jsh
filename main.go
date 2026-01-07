@@ -7,6 +7,7 @@ import (
 
 	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/OutOfBedlam/jsh/native"
+	"github.com/OutOfBedlam/jsh/root"
 )
 
 // JSH options:
@@ -37,12 +38,15 @@ func main() {
 		conf.Args = flag.Args()
 		conf.Default = "/sbin/shell.js" // default script to run if no args
 		conf.Env = map[string]any{
-			"PATH": "/sbin:/lib:/work",
-			"HOME": "/work",
-			"PWD":  "/work",
+			"PATH":         "/sbin:/work",
+			"HOME":         "/work",
+			"PWD":          "/work",
+			"LIBRARY_PATH": "./node_modules:/lib",
 		}
 	}
-	native.ConfigureRoot(&conf)
+	if !conf.FSTabs.HasMountPoint("/") {
+		conf.FSTabs = append([]engine.FSTab{root.RootFSTab()}, conf.FSTabs...)
+	}
 	engine, err := engine.New(conf)
 	if err != nil {
 		fmt.Println(err.Error())

@@ -28,7 +28,7 @@ func TestJshMain(t *testing.T) {
 		},
 		{
 			name:           "sbin_echo",
-			args:           []string{"echo", "Hello, Echo?"},
+			args:           []string{"/sbin/echo", "Hello, Echo?"},
 			stdinInput:     "",
 			expectedOutput: []string{"Hello, Echo?"},
 		},
@@ -39,8 +39,8 @@ func TestJshMain(t *testing.T) {
 			expectedOutput: []string{"Hello 世界 from demo.js!"},
 		},
 		{
-			name:       "optparse",
-			args:       []string{"optparse", "-v", "-h"},
+			name:       "optparse-demo",
+			args:       []string{"optparse-demo", "-v", "-h"},
 			stdinInput: "",
 			expectedOutput: []string{
 				"command version 0.1.0",
@@ -50,6 +50,27 @@ func TestJshMain(t *testing.T) {
 				"  -h, --help      Show this help message",
 				"  -v, --version   Show version information",
 				"Options: {help:true, version:true}",
+			},
+		},
+		{
+			name: "stream-demo",
+			args: []string{"stream-demo"},
+			expectedOutput: []string{
+				"INFO  === Stream Module Demo ===",
+				"",
+				"INFO  Demo 1: PassThrough Stream",
+				"INFO  ---------------------------",
+				"INFO  ",
+				"",
+				"INFO  Demo 2: Error Handling",
+				"INFO  ----------------------",
+				"INFO  Error stream closed",
+				"INFO  Caught error:Stream is not writable",
+				"INFO  ",
+				"=== Demo Complete ===",
+				"INFO  Stream finished",
+				"INFO  Stream closed",
+				"INFO  Error stream closed",
 			},
 		},
 	}

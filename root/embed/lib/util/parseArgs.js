@@ -1,6 +1,10 @@
-const parseArgs = (argsOrConfig, maybeOptions) => {
+'use strict';
+
+const process = require('/lib/process');
+
+function parseArgs(argsOrConfig, maybeOptions) {
     let args, options, strict, allowNegative, tokens, allowPositionals, positionalsConfig;
-    
+
     // Handle different call signatures:
     // parseArgs(options) - old style with config object
     // parseArgs(args, options) - new style with args array first
@@ -13,8 +17,8 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
         allowNegative = config.allowNegative || false;
         tokens = config.tokens || false;
         positionalsConfig = config.positionals;
-        allowPositionals = config.allowPositionals !== undefined 
-            ? config.allowPositionals 
+        allowPositionals = config.allowPositionals !== undefined
+            ? config.allowPositionals
             : !strict;
     } else {
         // Old signature: parseArgs(config) or parseArgs()
@@ -25,8 +29,8 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
         allowNegative = config.allowNegative || false;
         tokens = config.tokens || false;
         positionalsConfig = config.positionals;
-        allowPositionals = config.allowPositionals !== undefined 
-            ? config.allowPositionals 
+        allowPositionals = config.allowPositionals !== undefined
+            ? config.allowPositionals
             : !strict;
     }
 
@@ -75,7 +79,7 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
     // Build option maps for quick lookup
     const longOptions = new Map();
     const shortOptions = new Map();
-    
+
     for (const [name, optionConfig] of Object.entries(options)) {
         longOptions.set(name, { name, ...optionConfig });
         if (optionConfig.short) {
@@ -99,7 +103,7 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
             }
             foundOptionTerminator = true;
             index++;
-            
+
             // All remaining args are positionals
             while (index < args.length) {
                 if (!allowPositionals && strict) {
@@ -135,11 +139,11 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
             // Handle negative options (--no-foo)
             let isNegative = false;
             let actualOptionName = optionName;
-            
+
             if (allowNegative && optionName.startsWith('no-')) {
                 const positiveForm = optionName.slice(3);
                 const positiveOption = longOptions.get(positiveForm);
-                
+
                 if (positiveOption && positiveOption.type === 'boolean') {
                     isNegative = true;
                     actualOptionName = positiveForm;
@@ -339,10 +343,10 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
     // Process named positionals if configured
     if (positionalDefs && result.positionals.length > 0) {
         let posIndex = 0;
-        
+
         for (let i = 0; i < positionalDefs.length; i++) {
             const def = positionalDefs[i];
-            
+
             if (def.variadic) {
                 // Collect all remaining positionals
                 const variadicValues = [];
@@ -382,6 +386,4 @@ const parseArgs = (argsOrConfig, maybeOptions) => {
     return result;
 }
 
-module.exports = {
-    parseArgs,
-};
+module.exports = parseArgs;

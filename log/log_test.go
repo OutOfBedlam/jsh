@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -484,25 +485,6 @@ func TestAnyToPrintableGojaObject(t *testing.T) {
 	}
 }
 
-func TestAnyToPrintableGojaObjectNoToString(t *testing.T) {
-	vm := goja.New()
-
-	// Test goja.Object without toString
-	val, err := vm.RunString(`({key: "value"})`)
-	if err != nil {
-		t.Fatalf("failed to create object: %v", err)
-	}
-
-	obj := val.ToObject(vm)
-	result := anyToPrintable(obj)
-
-	// Should return the object's String() representation as a goja.Value
-	resultStr := fmt.Sprintf("%v", result)
-	if !strings.Contains(resultStr, "key") && !strings.Contains(resultStr, "Object") {
-		t.Errorf("expected result to contain object representation, got '%s'", resultStr)
-	}
-}
-
 func TestAnyToPrintableTimeType(t *testing.T) {
 	buf := &bytes.Buffer{}
 	defaultWriter = buf
@@ -641,5 +623,259 @@ func TestAnyToPrintableDefaultCase(t *testing.T) {
 	resultStr := fmt.Sprintf("%v", result)
 	if !strings.Contains(resultStr, "CustomType") {
 		t.Errorf("expected result to contain type name 'CustomType', got '%s'", resultStr)
+	}
+}
+
+func TestAnyToPrintablePointerTypes(t *testing.T) {
+	// Test pointer types that are not covered
+	strVal := "test string"
+	intVal := 42
+	int32Val := int32(32)
+	int64Val := int64(64)
+	floatVal := 3.14
+
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected string
+	}{
+		{
+			name:     "string pointer",
+			input:    &strVal,
+			expected: "test string",
+		},
+		{
+			name:     "int pointer",
+			input:    &intVal,
+			expected: "42",
+		},
+		{
+			name:     "int32 pointer",
+			input:    &int32Val,
+			expected: "32",
+		},
+		{
+			name:     "int64 pointer",
+			input:    &int64Val,
+			expected: "64",
+		},
+		{
+			name:     "float64 pointer",
+			input:    &floatVal,
+			expected: "3.14",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := anyToPrintable(tt.input)
+			resultStr := fmt.Sprintf("%v", result)
+			if !strings.Contains(resultStr, tt.expected) {
+				t.Errorf("expected result to contain '%s', got '%s'", tt.expected, resultStr)
+			}
+		})
+	}
+}
+
+func TestAnyToPrintableTimePointer(t *testing.T) {
+	// Test time.Time pointer
+	now := time.Now()
+	result := anyToPrintable(&now)
+	expected := now.Local().Format(time.DateTime)
+	if result != expected {
+		t.Errorf("expected time format '%s', got '%s'", expected, result)
+	}
+}
+
+func TestAnyToPrintableDuration(t *testing.T) {
+	// Test time.Duration
+	duration := 5 * time.Second
+	result := anyToPrintable(duration)
+	expected := "5s"
+	if result != expected {
+		t.Errorf("expected duration '%s', got '%s'", expected, result)
+	}
+}
+
+func TestAnyToPrintableURLTypes(t *testing.T) {
+	url1, _ := url.Parse("https://example.com/path1")
+	url2, _ := url.Parse("https://example.com/path2")
+
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected string
+	}{
+		{
+			name:     "single URL",
+			input:    url1,
+			expected: "https://example.com/path1",
+		},
+		{
+			name:     "URL slice",
+			input:    []*url.URL{url1, url2},
+			expected: "[https://example.com/path1, https://example.com/path2]",
+		},
+		{
+			name:     "URL slice pointer",
+			input:    &[]*url.URL{url1, url2},
+			expected: "[https://example.com/path1, https://example.com/path2]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := anyToPrintable(tt.input)
+			resultStr := fmt.Sprintf("%v", result)
+			if resultStr != tt.expected {
+				t.Errorf("expected '%s', got '%s'", tt.expected, resultStr)
+			}
+		})
+	}
+}
+
+func TestAnyToPrintableInt32AndInt64(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected string
+	}{
+		{
+			name:     "int32",
+			input:    int32(32),
+			expected: "32",
+		},
+		{
+			name:     "int64",
+			input:    int64(64),
+			expected: "64",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := anyToPrintable(tt.input)
+			resultStr := fmt.Sprintf("%v", result)
+			if resultStr != tt.expected {
+				t.Errorf("expected '%s', got '%s'", tt.expected, resultStr)
+			}
+		})
+	}
+}
+
+func TestAnyToPrintableByteArray(t *testing.T) {
+	// Test []byte
+	bytes := []byte("Hello, World!")
+	result := anyToPrintable(bytes)
+	expected := "Hello, World!"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+func TestAnyToPrintableEmptyByteArray(t *testing.T) {
+	// Test empty []byte
+	bytes := []byte{}
+	result := anyToPrintable(bytes)
+	expected := ""
+	if result != expected {
+		t.Errorf("expected empty string, got '%s'", result)
+	}
+}
+
+func TestAnyToPrintableStringSlice(t *testing.T) {
+	// Test []string
+	strSlice := []string{"apple", "banana", "cherry"}
+	result := anyToPrintable(strSlice)
+	expected := "[apple, banana, cherry]"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+func TestAnyToPrintableEmptyStringSlice(t *testing.T) {
+	// Test empty []string
+	strSlice := []string{}
+	result := anyToPrintable(strSlice)
+	expected := "[]"
+	if result != expected {
+		t.Errorf("expected '[]', got '%s'", result)
+	}
+}
+
+func TestAnyToPrintableMapStringAny(t *testing.T) {
+	// Test map[string]any with sorted keys
+	m := map[string]any{
+		"zebra": "last",
+		"apple": 1,
+		"mango": true,
+	}
+	result := anyToPrintable(m)
+	// Keys should be sorted alphabetically
+	expected := "{apple:1, mango:true, zebra:last}"
+	if result != expected {
+		t.Errorf("expected '%s', got '%s'", expected, result)
+	}
+}
+
+func TestAnyToPrintableEmptyMap(t *testing.T) {
+	// Test empty map[string]any
+	m := map[string]any{}
+	result := anyToPrintable(m)
+	expected := "{}"
+	if result != expected {
+		t.Errorf("expected '{}', got '%s'", result)
+	}
+}
+
+func TestAnyToPrintableNestedMap(t *testing.T) {
+	// Test nested map
+	m := map[string]any{
+		"outer": map[string]any{
+			"inner": "value",
+		},
+	}
+	result := anyToPrintable(m)
+	// Should handle nested maps
+	if !strings.Contains(result.(string), "outer") || !strings.Contains(result.(string), "inner") {
+		t.Errorf("expected nested map representation, got '%s'", result)
+	}
+}
+
+func TestConsolePrintfWithObjects(t *testing.T) {
+	vm := goja.New()
+	buf := &bytes.Buffer{}
+
+	con := SetConsole(vm, buf)
+	vm.Set("console", con)
+
+	// Test printf with objects that need conversion
+	_, err := vm.RunString(`console.printf("Object: %v", {key: "value"})`)
+	if err != nil {
+		t.Fatalf("failed to run console.printf with object: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "key") {
+		t.Errorf("expected output to contain 'key', got '%s'", output)
+	}
+}
+
+func TestConsolePrintfWithArrays(t *testing.T) {
+	vm := goja.New()
+	buf := &bytes.Buffer{}
+
+	con := SetConsole(vm, buf)
+	vm.Set("console", con)
+
+	// Test printf with arrays
+	_, err := vm.RunString(`console.printf("Array: %v", [1, 2, 3])`)
+	if err != nil {
+		t.Fatalf("failed to run console.printf with array: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "1") {
+		t.Errorf("expected output to contain array elements, got '%s'", output)
 	}
 }

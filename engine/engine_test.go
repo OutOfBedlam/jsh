@@ -23,13 +23,20 @@ func RunTest(t *testing.T, tc TestCase) {
 	t.Helper()
 	t.Run(tc.name, func(t *testing.T) {
 		t.Helper()
+		tmpDir := t.TempDir()
 		conf := Config{
-			Name:   tc.name,
-			Code:   tc.script,
-			FSTabs: []FSTab{{MountPoint: "/", Source: "../native/root/"}, {MountPoint: "/work", Source: "../test/"}},
+			Name: tc.name,
+			Code: tc.script,
+			FSTabs: []FSTab{
+				{MountPoint: "/", Source: "../root/embed/"},
+				{MountPoint: "/work", Source: "../test/"},
+				{MountPoint: "/tmp", Source: tmpDir},
+			},
 			Env: map[string]any{
-				"PATH": "/lib:/work:/sbin",
-				"PWD":  "/work",
+				"PATH":         "/work:/sbin",
+				"PWD":          "/work",
+				"HOME":         "/work",
+				"LIBRARY_PATH": "./node_modules:/lib",
 			},
 			Reader:      &bytes.Buffer{},
 			Writer:      &bytes.Buffer{},
@@ -40,6 +47,7 @@ func RunTest(t *testing.T, tc TestCase) {
 			t.Fatalf("Failed to create JSRuntime: %v", err)
 		}
 		jr.RegisterNativeModule("@jsh/process", jr.Process)
+		jr.RegisterNativeModule("@jsh/fs", jr.Filesystem)
 		conf.Reader.(*bytes.Buffer).WriteString(strings.Join(tc.input, "\n") + "\n")
 
 		if tc.preTest != nil {

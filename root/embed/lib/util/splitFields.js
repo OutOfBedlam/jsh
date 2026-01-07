@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * Split a string into fields by whitespace, respecting quoted substrings.
  * Quoted parts (with " or ') are treated as single fields even if they contain spaces.
@@ -12,7 +14,7 @@
  * splitFields("hello 'world foo' bar") // ['hello', 'world foo', 'bar']
  * splitFields('a "b c" d "e f"') // ['a', 'b c', 'd', 'e f']
  */
-const splitFields = (str, options) => {
+function splitFields(str, options) {
     if (typeof str !== 'string') {
         throw new TypeError('Input must be a string');
     }
@@ -60,6 +62,4 @@ const splitFields = (str, options) => {
     return fields;
 }
 
-module.exports = {
-    splitFields
-};
+module.exports = splitFields;

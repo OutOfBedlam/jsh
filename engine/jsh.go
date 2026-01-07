@@ -18,22 +18,17 @@ import (
 )
 
 func New(conf Config) (*JSRuntime, error) {
-	// Apply FSTab configuration hooks
-	for _, hook := range conf.fstabHooks {
-		conf.FSTabs = hook(conf.FSTabs)
-	}
-
 	// Build filesystem from FSTabs
-	fileSystem := NewFS()
+	filesystem := NewFS()
 	for _, tab := range conf.FSTabs {
 		if tab.FS == nil {
 			if dirfs, err := DirFS(tab.Source); err != nil {
 				return nil, fmt.Errorf("error mounting %s to %s: %v", tab.Source, tab.MountPoint, err)
 			} else {
-				fileSystem.Mount(tab.MountPoint, dirfs)
+				filesystem.Mount(tab.MountPoint, dirfs)
 			}
 		} else {
-			fileSystem.Mount(tab.MountPoint, tab.FS)
+			filesystem.Mount(tab.MountPoint, tab.FS)
 		}
 	}
 
@@ -52,7 +47,7 @@ func New(conf Config) (*JSRuntime, error) {
 		execBuilderFunc = execBuilder(conf.FSTabs)
 	}
 	opts := []EnvOption{
-		WithFilesystem(fileSystem),
+		WithFilesystem(filesystem),
 		WithReader(reader),
 		WithWriter(writer),
 		WithExecBuilder(execBuilderFunc),
@@ -63,7 +58,10 @@ func New(conf Config) (*JSRuntime, error) {
 	}
 	// Default environment variables
 	if env.Get("PATH") == nil {
-		env.Set("PATH", "/sbin:/lib")
+		env.Set("PATH", "/sbin:.")
+	}
+	if env.Get("LIBRARY_PATH") == nil {
+		env.Set("LIBRARY_PATH", "./node_modules:/lib")
 	}
 	if env.Get("HOME") == nil {
 		env.Set("HOME", "/")
@@ -86,13 +84,12 @@ func New(conf Config) (*JSRuntime, error) {
 		if cmd == "" {
 			// No command or script file provided
 			// start default command
-			b, _ := LoadSource(env, conf.Default)
+			cmd := Which(env, conf.Default)
+			b, _ := LoadSource(env, cmd)
 			scriptName = conf.Default
 			script = string(b)
 		} else {
-			if !strings.HasSuffix(cmd, ".js") {
-				cmd = cmd + ".js"
-			}
+			cmd = Which(env, cmd)
 			b, err := LoadSource(env, cmd)
 			if err != nil {
 				return nil, fmt.Errorf("command not found: %s", cmd)
@@ -113,16 +110,21 @@ func New(conf Config) (*JSRuntime, error) {
 		scriptName = "ad-hoc"
 	}
 
+	for i, arg := range scriptArgs {
+		scriptArgs[i] = Expand(env, arg)
+	}
 	jr := &JSRuntime{
-		Name:   scriptName,
-		Source: script,
-		Args:   scriptArgs,
-		Env:    env,
+		Name:       scriptName,
+		Source:     script,
+		Args:       scriptArgs,
+		Env:        env,
+		filesystem: filesystem,
 	}
 
 	jr.registry = require.NewRegistry(
 		require.WithLoader(jr.loadSource),
 		require.WithPathResolver(jr.pathResolver),
+		require.WithGlobalFolders(jr.globalFolders()...),
 	)
 	jr.eventLoop = NewEventLoop(
 		eventloop.EnableConsole(false),
@@ -137,12 +139,11 @@ func (jr *JSRuntime) Main() int {
 			frame := ie.Stack()[0]
 			if exit, ok := ie.Value().(Exit); ok {
 				if exit.Code < 0 {
-					fmt.Printf("exit code %d at %v\n", exit.Code, frame.Position())
+					fmt.Printf("exit status %d at %v\n", exit.Code, frame.Position())
 				}
 				return exit.Code
 			}
 		}
-		fmt.Println("runtime error:", err)
 		return 1
 	}
 	return jr.ExitCode()
@@ -222,15 +223,10 @@ type Config struct {
 	Env    map[string]any `json:"env"`
 	FSTabs FSTabs         `json:"fstabs,omitempty"`
 
-	Default     string                `json:"default,omitempty"`
-	Writer      io.Writer             `json:"-"`
-	Reader      io.Reader             `json:"-"`
-	ExecBuilder ExecBuilderFunc       `json:"-"`
-	fstabHooks  []func(FSTabs) FSTabs `json:"-"`
-}
-
-func (c *Config) AddFSTabHook(hook func(FSTabs) FSTabs) {
-	c.fstabHooks = append(c.fstabHooks, hook)
+	Default     string          `json:"default,omitempty"`
+	Writer      io.Writer       `json:"-"`
+	Reader      io.Reader       `json:"-"`
+	ExecBuilder ExecBuilderFunc `json:"-"`
 }
 
 type FSTab struct {
@@ -241,7 +237,7 @@ type FSTab struct {
 
 type FSTabs []FSTab
 
-// Set(stirng) error is required to implement flag.Value interface.
+// Set(string) error is required to implement flag.Value interface.
 // Set parses and adds a new FSTab from the given string.
 // The format is /mountpoint=source
 func (m *FSTabs) Set(value string) error {

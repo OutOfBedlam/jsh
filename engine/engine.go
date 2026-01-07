@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/OutOfBedlam/jsh/log"
@@ -25,6 +26,7 @@ type JSRuntime struct {
 
 	registry      *require.Registry
 	eventLoop     *eventloop.EventLoop
+	filesystem    *FS
 	exitCode      int
 	shutdownHooks []func()
 	nowFunc       func() time.Time
@@ -71,8 +73,25 @@ func (jr *JSRuntime) Run() error {
 		url.Enable(vm)
 		vm.SetFieldNameMapper(goja.UncapFieldNameMapper())
 		vm.Set("console", log.SetConsole(vm, jr.Env.Writer()))
+		// goja_nodejs core-util module also uses 'util' name
+		// and it is loaded first then '/lib/util' would be ignored
+		// so we copy all exports from '/lib/util' into 'util' here
+		vm.RunScript("init", `(()=>{
+			const u = require('/lib/util');
+			const util = require('util');
+			for (const k of Object.keys(u)) {
+				util[k] = u[k];
+			}
+		})();`)
 		if _, err := vm.RunProgram(program); err != nil {
 			retErr = err
+			if ie, ok := err.(*goja.InterruptedError); ok {
+				fmt.Fprintf(jr.Env.Writer(), "Interrupted: %s\n", ie.String())
+			} else {
+				msg := err.Error()
+				msg = strings.TrimPrefix(msg, "GoError: ")
+				fmt.Fprintf(jr.Env.Writer(), "%s\n", msg)
+			}
 			jr.exitCode = -1
 		}
 	})
@@ -89,6 +108,10 @@ func (jr *JSRuntime) loadSource(moduleName string) ([]byte, error) {
 
 func (jr *JSRuntime) pathResolver(base, target string) string {
 	return PathResolver(jr.Env, base, target)
+}
+
+func (jr *JSRuntime) globalFolders() []string {
+	return GlobalFolders(jr.Env)
 }
 
 func (jr *JSRuntime) AddShutdownHook(hook func()) {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/OutOfBedlam/jsh/engine"
+	"github.com/OutOfBedlam/jsh/root"
 	"github.com/gorilla/websocket"
 )
 
@@ -53,7 +54,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		conf := engine.Config{
 			Name:   tc.name,
 			Code:   tc.script,
-			FSTabs: []engine.FSTab{{MountPoint: "/", Source: "../root/"}, {MountPoint: "/work", Source: "../../test/"}},
+			FSTabs: []engine.FSTab{root.RootFSTab(), {MountPoint: "/work", Source: "../../test/"}},
 			Env:    tc.vars,
 			Reader: &bytes.Buffer{},
 			Writer: &bytes.Buffer{},

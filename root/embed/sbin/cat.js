@@ -1,6 +1,6 @@
 (() => {
-    const process = require("/lib/process");
-    const { parseArgs } = require("/lib/util/parseArgs");
+    const process = require('process');
+    const { parseArgs } = require('util');
     const pwd = process.env.get("PWD");
     const fs = process.env.filesystem();
 

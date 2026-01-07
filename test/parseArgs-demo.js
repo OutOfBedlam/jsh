@@ -1,13 +1,19 @@
-const {parseArgs} = require('/lib/util');
+const {parseArgs} = require('util');
+const process = require('process');
 
 console.log('\n=== Test 1: Simple named positionals ===');
-const result1 = parseArgs(['input.txt', 'output.txt'], {
-    options: {},
-    allowPositionals: true,
-    positionals: ['inputFile', 'outputFile']
-});
-console.log('positionals:', result1.positionals);
-console.log('namedPositionals:', result1.namedPositionals);
+try {
+    const result1 = parseArgs(['input.txt', 'output.txt'], {
+        options: {},
+        allowPositionals: true,
+        positionals: ['inputFile', 'outputFile']
+    });
+    console.log('positionals:', result1.positionals);
+    console.log('namedPositionals:', result1.namedPositionals);
+} catch (error) {
+    console.log('Error:', error.message);
+    process.exit(1);
+}
 
 console.log('\n=== Test 2: Optional positionals ===');
 const result2 = parseArgs(['input.txt'], {

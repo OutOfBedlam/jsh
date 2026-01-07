@@ -1,6 +1,6 @@
 const {WebSocket} = require('ws');
-const {parseArgs} = require('/lib/util');
-const args = require('/lib/process').argv.slice(2);
+const {parseArgs} = require('/util');
+const args = require('process').argv.slice(2);
 
 const opts = parseArgs(args, {
     options: {

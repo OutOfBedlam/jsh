@@ -1,6 +1,6 @@
 'use strict';
 
-const EventEmitter = require('/lib/events');
+const EventEmitter = require('events');
 const _process = require('@jsh/process');
 
 class Process extends EventEmitter {

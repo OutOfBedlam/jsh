@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -30,7 +31,6 @@ func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 	// Version information
 	versions := vm.NewObject()
 	versions.Set("jsh", "1.0.0")
-	versions.Set("goja", "1.0.0")
 	versions.Set("go", runtime.Version())
 	exports.Set("versions", versions)
 
@@ -45,6 +45,8 @@ func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 	// Functions
 	exports.Set("addShutdownHook", jr.AddShutdownHook)
 	exports.Set("exit", doExit(vm))
+	exports.Set("which", jr.Which)
+	exports.Set("expand", jr.Expand)
 	exports.Set("exec", doExec(vm, jr.Exec))
 	exports.Set("execString", doExecString(vm, jr.Exec))
 	exports.Set("dispatchEvent", dispatchEvent(jr.EventLoop()))
@@ -61,6 +63,15 @@ func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 
 	// Signal handling support
 	exports.Set("kill", doKill(vm))
+
+	// debug
+	exports.Set("dumpStack", func(depth int) {
+		var buf = make([]goja.StackFrame, depth)
+		frames := vm.CaptureCallStack(depth, buf)
+		for n, frame := range frames {
+			fmt.Printf("[%d] %s: %s %s\n", n, frame.SrcName(), frame.FuncName(), frame.Position())
+		}
+	})
 }
 
 func (jr *JSRuntime) createStdin(vm *goja.Runtime) *goja.Object {
@@ -207,18 +218,26 @@ func (jr *JSRuntime) Cwd() string {
 	return jr.Env.Get("PWD").(string)
 }
 
+func (jr *JSRuntime) Which(cmd string) string {
+	return Which(jr.Env, cmd)
+}
+
+func (jr *JSRuntime) Expand(str string) string {
+	return Expand(jr.Env, str)
+}
+
 func (jr *JSRuntime) Chdir(path string) error {
-	// Get target directory
-	if path == "" || path == "~" {
-		path = jr.Env.Get("HOME").(string)
+	if path == "" {
+		path = "$HOME"
 	}
-	pwd := jr.Cwd()
+	// Get target directory
+	path = ResolvePath(jr.Env, path)
 
 	// Handle relative paths
 	if !strings.HasPrefix(path, "/") {
+		pwd := jr.Cwd()
 		path = pwd + "/" + path
 	}
-	path = CleanPath(path)
 
 	// Check if directory exists
 	fs := jr.Env.Filesystem()
@@ -234,6 +253,7 @@ func (jr *JSRuntime) Chdir(path string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("chdir: not a directory: %s", path)
 	}
+	path = filepath.ToSlash(filepath.Clean(path))
 	jr.Env.Set("PWD", path)
 	return nil
 }
@@ -353,8 +373,39 @@ func doHrtime(vm *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 			// Calculate difference from previous hrtime call
 			prevArray := call.Argument(0).Export()
 			if arr, ok := prevArray.([]interface{}); ok && len(arr) == 2 {
-				prevSec := int64(arr[0].(float64))
-				prevNano := int64(arr[1].(float64))
+				var prevSec, prevNano int64
+
+				// Handle both int64 and float64 types
+				switch v := arr[0].(type) {
+				case int64:
+					prevSec = v
+				case float64:
+					prevSec = int64(v)
+				case int:
+					prevSec = int64(v)
+				default:
+					// Invalid type, return current time
+					result := vm.NewArray()
+					result.Set("0", now.Unix())
+					result.Set("1", now.Nanosecond())
+					return result
+				}
+
+				switch v := arr[1].(type) {
+				case int64:
+					prevNano = v
+				case float64:
+					prevNano = int64(v)
+				case int:
+					prevNano = int64(v)
+				default:
+					// Invalid type, return current time
+					result := vm.NewArray()
+					result.Set("0", now.Unix())
+					result.Set("1", now.Nanosecond())
+					return result
+				}
+
 				prevTime := time.Unix(prevSec, prevNano)
 				diff := now.Sub(prevTime)
 

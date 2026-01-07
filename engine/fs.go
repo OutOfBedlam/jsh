@@ -9,20 +9,31 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/dop251/goja"
 )
 
 // FS allows mounting multiple fs.FS at different paths
 type FS struct {
 	mounts map[string]fs.FS
+	fds    map[int]*os.File
+	nextFD int
+	fdMu   sync.Mutex
 }
 
 var _ fs.FS = (*FS)(nil)
 var _ fs.ReadDirFS = (*FS)(nil)
+var _ fs.ReadFileFS = (*FS)(nil)
 
 // NewFS creates a new MountFS
 func NewFS() *FS {
-	return &FS{mounts: make(map[string]fs.FS)}
+	return &FS{
+		mounts: make(map[string]fs.FS),
+		fds:    make(map[int]*os.File),
+		nextFD: 3, // Start from 3 (0, 1, 2 are stdin, stdout, stderr)
+	}
 }
 
 // Mount mounts an fs.FS at a given virtual path
@@ -76,7 +87,7 @@ func (m *FS) Mounts() []string {
 }
 
 // bestMatch finds the best matching mounted fs.FS for the given path
-func (m FS) bestMatch(name string) (fs.FS, string) {
+func (m *FS) bestMatch(name string) (fs.FS, string) {
 	name = CleanPath(name)
 	// Find the longest matching mount point
 	var bestMatch string
@@ -250,6 +261,196 @@ func (m *FS) WriteFile(name string, data []byte) error {
 	return m.performOSOperation(name, func(target string) error {
 		return os.WriteFile(target, data, 0644)
 	})
+}
+
+// AppendFile appends data to a file at the specified path
+// Creates the file if it does not exist
+func (m *FS) AppendFile(name string, data []byte) error {
+	return m.performOSOperation(name, func(target string) error {
+		f, err := os.OpenFile(target, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = f.Write(data)
+		return err
+	})
+}
+
+// Chmod changes the permission mode of a file or directory at the specified path
+func (m *FS) Chmod(name string, mode uint32) error {
+	return m.performOSOperation(name, func(target string) error {
+		return os.Chmod(target, fs.FileMode(mode))
+	})
+}
+
+// Chown changes the uid and gid of a file or directory at the specified path
+func (m *FS) Chown(name string, uid, gid int) error {
+	return m.performOSOperation(name, func(target string) error {
+		return os.Chown(target, uid, gid)
+	})
+}
+
+// Symlink creates a symbolic link from newName to oldName
+func (m *FS) Symlink(oldName, newName string) error {
+	newName = CleanPath(newName)
+
+	newFS, newMatch := m.bestMatch(newName)
+	if newFS == nil {
+		return fs.ErrNotExist
+	}
+
+	relPath := getRelativePath(newName, newMatch)
+	target, err := getOSPath(newFS, relPath)
+	if err != nil {
+		return err
+	}
+
+	return os.Symlink(oldName, target)
+}
+
+// Readlink reads the target of a symbolic link
+func (m *FS) Readlink(name string) (string, error) {
+	name = CleanPath(name)
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return "", fs.ErrNotExist
+	}
+
+	relPath := getRelativePath(name, bestMatch)
+	target, err := getOSPath(bestFS, relPath)
+	if err != nil {
+		return "", err
+	}
+
+	return os.Readlink(target)
+}
+
+// OpenFD opens a file and returns a file descriptor
+func (m *FS) OpenFD(name string, flags int, mode uint32) (int, error) {
+	name = CleanPath(name)
+	bestFS, bestMatch := m.bestMatch(name)
+	if bestFS == nil {
+		return -1, fs.ErrNotExist
+	}
+
+	relPath := getRelativePath(name, bestMatch)
+	target, err := getOSPath(bestFS, relPath)
+	if err != nil {
+		return -1, err
+	}
+
+	file, err := os.OpenFile(target, flags, fs.FileMode(mode))
+	if err != nil {
+		return -1, err
+	}
+
+	m.fdMu.Lock()
+	defer m.fdMu.Unlock()
+
+	fd := m.nextFD
+	m.nextFD++
+	m.fds[fd] = file
+
+	return fd, nil
+}
+
+// CloseFD closes a file descriptor
+func (m *FS) CloseFD(fd int) error {
+	m.fdMu.Lock()
+	defer m.fdMu.Unlock()
+
+	file, ok := m.fds[fd]
+	if !ok {
+		return fs.ErrInvalid
+	}
+
+	delete(m.fds, fd)
+	return file.Close()
+}
+
+// ReadFD reads from a file descriptor into a buffer
+func (m *FS) ReadFD(fd int, length int) ([]byte, int, error) {
+	m.fdMu.Lock()
+	file, ok := m.fds[fd]
+	m.fdMu.Unlock()
+
+	if !ok {
+		return nil, 0, fs.ErrInvalid
+	}
+
+	buffer := make([]byte, length)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		return nil, 0, err
+	}
+
+	return buffer[:n], n, nil
+}
+
+// WriteFD writes data to a file descriptor
+func (m *FS) WriteFD(fd int, data []byte) (int, error) {
+	m.fdMu.Lock()
+	file, ok := m.fds[fd]
+	m.fdMu.Unlock()
+
+	if !ok {
+		return 0, fs.ErrInvalid
+	}
+
+	return file.Write(data)
+}
+
+// FstatFD gets file info for a file descriptor
+func (m *FS) FstatFD(fd int) (fs.FileInfo, error) {
+	m.fdMu.Lock()
+	file, ok := m.fds[fd]
+	m.fdMu.Unlock()
+
+	if !ok {
+		return nil, fs.ErrInvalid
+	}
+
+	return file.Stat()
+}
+
+// FchmodFD changes the mode of a file descriptor
+func (m *FS) FchmodFD(fd int, mode uint32) error {
+	m.fdMu.Lock()
+	file, ok := m.fds[fd]
+	m.fdMu.Unlock()
+
+	if !ok {
+		return fs.ErrInvalid
+	}
+
+	return file.Chmod(fs.FileMode(mode))
+}
+
+// FchownFD changes the owner of a file descriptor
+func (m *FS) FchownFD(fd int, uid, gid int) error {
+	m.fdMu.Lock()
+	file, ok := m.fds[fd]
+	m.fdMu.Unlock()
+
+	if !ok {
+		return fs.ErrInvalid
+	}
+
+	return file.Chown(uid, gid)
+}
+
+// FsyncFD synchronizes a file descriptor
+func (m *FS) FsyncFD(fd int) error {
+	m.fdMu.Lock()
+	file, ok := m.fds[fd]
+	m.fdMu.Unlock()
+
+	if !ok {
+		return fs.ErrInvalid
+	}
+
+	return file.Sync()
 }
 
 // ReadDir implements fs.ReadDirFS
@@ -427,4 +628,50 @@ func (d *dotFileInfo) IsDir() bool {
 
 func (d *dotFileInfo) Sys() interface{} {
 	return nil
+}
+
+func (jr *JSRuntime) Filesystem(vm *goja.Runtime, module *goja.Object) {
+	exports := module.Get("exports").(*goja.Object)
+
+	exports.Set("resolvePath", func(path string) string { return ResolvePath(jr.Env, path) })
+	exports.Set("resolveAbsPath", func(path string) string { return ResolveAbsPath(jr.Env, path) })
+	exports.Set("readFile", func(path string) ([]byte, error) { return jr.filesystem.ReadFile(path) })
+	exports.Set("writeFile", func(path string, data []byte) error { return jr.filesystem.WriteFile(path, data) })
+	exports.Set("appendFile", func(path string, data []byte) error { return jr.filesystem.AppendFile(path, data) })
+	exports.Set("stat", func(path string) (fs.FileInfo, error) { return jr.filesystem.Stat(path) })
+	exports.Set("mkdir", func(path string) error { return jr.filesystem.Mkdir(path) })
+	exports.Set("rmdir", func(path string) error { return jr.filesystem.Rmdir(path) })
+	exports.Set("remove", func(path string) error { return jr.filesystem.Remove(path) })
+	exports.Set("rename", func(oldPath, newPath string) error { return jr.filesystem.Rename(oldPath, newPath) })
+	exports.Set("readDir", func(path string) ([]fs.DirEntry, error) { return jr.filesystem.ReadDir(path) })
+	exports.Set("chmod", func(path string, mode uint32) error { return jr.filesystem.Chmod(path, mode) })
+	exports.Set("chown", func(path string, uid, gid int) error { return jr.filesystem.Chown(path, uid, gid) })
+	exports.Set("symlink", func(oldName, newName string) error { return jr.filesystem.Symlink(oldName, newName) })
+	exports.Set("readlink", func(path string) (string, error) { return jr.filesystem.Readlink(path) })
+
+	// File descriptor operations
+	exports.Set("open", func(path string, flags int, mode uint32) (int, error) {
+		return jr.filesystem.OpenFD(path, flags, mode)
+	})
+	exports.Set("close", func(fd int) error { return jr.filesystem.CloseFD(fd) })
+	exports.Set("read", func(fd int, length int) ([]byte, int, error) {
+		return jr.filesystem.ReadFD(fd, length)
+	})
+	exports.Set("write", func(fd int, data []byte) (int, error) {
+		return jr.filesystem.WriteFD(fd, data)
+	})
+	exports.Set("fstat", func(fd int) (fs.FileInfo, error) { return jr.filesystem.FstatFD(fd) })
+	exports.Set("fchmod", func(fd int, mode uint32) error { return jr.filesystem.FchmodFD(fd, mode) })
+	exports.Set("fchown", func(fd int, uid, gid int) error { return jr.filesystem.FchownFD(fd, uid, gid) })
+	exports.Set("fsync", func(fd int) error { return jr.filesystem.FsyncFD(fd) })
+
+	// Export OS-specific file constants from Go
+	// These values are platform-specific and must come from the os package
+	exports.Set("O_RDONLY", os.O_RDONLY)
+	exports.Set("O_WRONLY", os.O_WRONLY)
+	exports.Set("O_RDWR", os.O_RDWR)
+	exports.Set("O_CREAT", os.O_CREATE)
+	exports.Set("O_EXCL", os.O_EXCL)
+	exports.Set("O_TRUNC", os.O_TRUNC)
+	exports.Set("O_APPEND", os.O_APPEND)
 }

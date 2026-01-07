@@ -143,11 +143,13 @@ func (sh *Shell) process(line string) (int, bool) {
 			}
 
 			exitCode := -1
-			switch v := returnValue.Export().(type) {
-			default:
-				log.Print(returnValue.String())
-			case int64:
-				exitCode = int(v)
+			if returnValue != nil {
+				switch v := returnValue.Export().(type) {
+				default:
+					log.Print(returnValue.String())
+				case int64:
+					exitCode = int(v)
+				}
 			}
 			if exitCode != 0 && stopOnError {
 				return exitCode, true
@@ -158,16 +160,20 @@ func (sh *Shell) process(line string) (int, bool) {
 }
 
 func (sh *Shell) exec(command string, args []string) goja.Value {
-	parts := []string{fmt.Sprintf("%q", command)}
+	parts := []string{}
 	for _, arg := range args {
 		parts = append(parts, fmt.Sprintf("%q", arg))
 	}
 	str := strings.Join(parts, ", ")
 
 	val, _ := sh.rt.RunString(fmt.Sprintf(`(()=>{
-		const {exec} = require("/lib/process");
-		return exec(%s);
-	})()`, str))
+		const {exec, which} = require("process");
+		const path = which('%s');
+		if (!path || path === "") {
+			throw new Error("command not found: " + %q);
+		}
+		return exec(path, %s);
+	})()`, command, command, str))
 
 	return val
 }

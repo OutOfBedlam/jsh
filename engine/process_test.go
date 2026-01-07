@@ -15,10 +15,26 @@ func TestProcess(t *testing.T) {
 				const process = require("/lib/process");
 				console.println("PATH:", process.env.get("PATH"));
 				console.println("PWD:", process.env.get("PWD"));
+				console.println("LIBRARY_PATH:", process.env.get("LIBRARY_PATH"));
 			`,
 			output: []string{
-				"PATH: /lib:/work:/sbin",
+				"PATH: /work:/sbin",
 				"PWD: /work",
+				"LIBRARY_PATH: ./node_modules:/lib",
+			},
+		},
+		{
+			name: "process_expand",
+			script: `
+				const process = require("/lib/process");
+				const expanded1 = process.expand("$HOME/file.txt");
+				const expanded2 = process.expand("$HOME/../lib/file.txt");
+				console.println("expanded1:", expanded1);
+				console.println("expanded2:", expanded2);
+			`,
+			output: []string{
+				"expanded1: /work/file.txt",
+				"expanded2: /work/../lib/file.txt",
 			},
 		},
 		{
@@ -224,8 +240,9 @@ func TestProcessExec(t *testing.T) {
 		{
 			name: "exec_basic",
 			script: `
-				const process = require("/lib/process");
-				const exitCode = process.exec("echo", "hello from exec");
+				const process = require("process");
+				const path = process.which('echo');
+				const exitCode = process.exec(path, "hello from exec");
 				console.println("exit code:", exitCode);
 			`,
 			output: []string{
@@ -236,7 +253,7 @@ func TestProcessExec(t *testing.T) {
 		{
 			name: "execString_basic",
 			script: `
-				const process = require("/lib/process");
+				const process = require("process");
 				const exitCode = process.execString("console.println('hello from execString')");
 				console.println("exit code:", exitCode);
 			`,
@@ -248,8 +265,9 @@ func TestProcessExec(t *testing.T) {
 		{
 			name: "exec_with_args",
 			script: `
-				const process = require("/lib/process");
-				const exitCode = process.exec("echo", "arg1", "arg2", "arg3");
+				const process = require("process");
+				const path = process.which('echo');
+				const exitCode = process.exec(path, "arg1", "arg2", "arg3");
 				console.println("done");
 			`,
 			output: []string{
@@ -481,6 +499,624 @@ func TestProcessEvents(t *testing.T) {
 			output: []string{
 				"listener 1",
 				"listener 2",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessStderr(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "stderr_write",
+			script: `
+				const process = require("/lib/process");
+				const result = process.stderr.write("error message\n");
+				console.println("write success:", result);
+			`,
+			output: []string{
+				"write success: true",
+			},
+		},
+		{
+			name: "stderr_write_empty",
+			script: `
+				const process = require("/lib/process");
+				const result = process.stderr.write("");
+				console.println("write empty:", result);
+			`,
+			output: []string{
+				"write empty: true",
+			},
+		},
+		{
+			name: "stderr_isTTY",
+			script: `
+				const process = require("/lib/process");
+				const isTTY = process.stderr.isTTY();
+				console.println("isTTY type:", typeof isTTY);
+			`,
+			output: []string{
+				"isTTY type: boolean",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessStdout(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "stdout_write_empty",
+			script: `
+				const process = require("/lib/process");
+				const result = process.stdout.write("");
+				console.println("empty write:", result);
+			`,
+			output: []string{
+				"empty write: true",
+			},
+		},
+		{
+			name: "stdout_isTTY",
+			script: `
+				const process = require("/lib/process");
+				const isTTY = process.stdout.isTTY();
+				console.println("isTTY type:", typeof isTTY);
+			`,
+			output: []string{
+				"isTTY type: boolean",
+			},
+		},
+		{
+			name: "stdout_write_multiple",
+			script: `
+				const process = require("/lib/process");
+				process.stdout.write("first\n");
+				process.stdout.write("second\n");
+				console.println("done");
+			`,
+			output: []string{
+				"first",
+				"second",
+				"done",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessStdinErrors(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "stdin_readBytes_no_args",
+			script: `
+				const process = require("/lib/process");
+				const result = process.stdin.readBytes();
+				if (result instanceof Error) {
+					console.println("error:", result.message.includes("requires a number"));
+				} else {
+					console.println("no error, got:", typeof result);
+				}
+			`,
+			input: []string{"test"},
+			output: []string{
+				"error: true",
+			},
+		},
+		{
+			name: "stdin_readBytes_negative",
+			script: `
+				const process = require("/lib/process");
+				const result = process.stdin.readBytes(-1);
+				if (result instanceof Error) {
+					console.println("error:", result.message.includes("positive number"));
+				} else {
+					console.println("no error, got:", typeof result);
+				}
+			`,
+			input: []string{"test"},
+			output: []string{
+				"error: true",
+			},
+		},
+		{
+			name: "stdin_readBytes_zero",
+			script: `
+				const process = require("/lib/process");
+				const result = process.stdin.readBytes(0);
+				if (result instanceof Error) {
+					console.println("error:", result.message.includes("positive number"));
+				} else {
+					console.println("no error, got:", typeof result);
+				}
+			`,
+			input: []string{"test"},
+			output: []string{
+				"error: true",
+			},
+		},
+		{
+			name: "stdin_readBytes_more_than_available",
+			script: `
+				const process = require("/lib/process");
+				const data = process.stdin.readBytes(100);
+				console.println("read length:", data.length);
+			`,
+			input: []string{"short"},
+			output: []string{
+				"read length: 6",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessHrtime(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "hrtime_basic",
+			script: `
+				const process = require("/lib/process");
+				const time1 = process.hrtime();
+				console.println("is array:", Array.isArray(time1));
+				console.println("length:", time1.length);
+				console.println("has seconds:", typeof time1[0]);
+				console.println("has nanos:", typeof time1[1]);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+				"has seconds: number",
+				"has nanos: number",
+			},
+		},
+		{
+			name: "hrtime_diff",
+			script: `
+				const process = require("/lib/process");
+				const start = process.hrtime();
+				console.println("start type:", Array.isArray(start));
+				// Small delay
+				let sum = 0;
+				for (let i = 0; i < 1000; i++) {
+					sum += i;
+				}
+				const diff = process.hrtime([start[0], start[1]]);
+				console.println("diff is array:", Array.isArray(diff));
+				console.println("diff length:", diff.length);
+				console.println("has elapsed:", diff[0] >= 0 && diff[1] >= 0);
+			`,
+			output: []string{
+				"start type: true",
+				"diff is array: true",
+				"diff length: 2",
+				"has elapsed: true",
+			},
+		},
+		{
+			name: "hrtime_with_invalid_arg",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime("invalid");
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+		{
+			name: "hrtime_with_empty_array",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime([]);
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessKill(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "kill_no_args",
+			script: `
+				const process = require("/lib/process");
+				const result = process.kill();
+				if (result instanceof Error) {
+					console.println("error:", result.message.includes("requires a pid"));
+				} else {
+					console.println("result:", result);
+				}
+			`,
+			output: []string{
+				"error: true",
+			},
+		},
+		{
+			name: "kill_with_pid",
+			script: `
+				const process = require("/lib/process");
+				const result = process.kill(12345);
+				console.println("kill result:", result);
+			`,
+			output: []string{
+				"kill result: true",
+			},
+		},
+		{
+			name: "kill_with_signal",
+			script: `
+				const process = require("/lib/process");
+				const result = process.kill(12345, "SIGKILL");
+				console.println("kill with signal:", result);
+			`,
+			output: []string{
+				"kill with signal: true",
+			},
+		},
+		{
+			name: "kill_with_sigterm",
+			script: `
+				const process = require("/lib/process");
+				const result = process.kill(99999, "SIGTERM");
+				console.println("result:", result);
+			`,
+			output: []string{
+				"result: true",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessNextTick(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "nextTick_with_args",
+			script: `
+				const process = require("/lib/process");
+				process.nextTick((a, b, c) => {
+					console.println("args:", a, b, c);
+				}, "first", "second", "third");
+				console.println("main");
+			`,
+			output: []string{
+				"main",
+				"args: first second third",
+			},
+		},
+		{
+			name: "nextTick_no_callback",
+			script: `
+				const process = require("/lib/process");
+				const result = process.nextTick();
+				console.println("result:", result === undefined ? "undefined" : result);
+			`,
+			output: []string{
+				"result: undefined",
+			},
+		},
+		{
+			name: "nextTick_non_function",
+			script: `
+				const process = require("/lib/process");
+				const result = process.nextTick("not a function");
+				console.println("result:", result === undefined ? "undefined" : result);
+			`,
+			output: []string{
+				"result: undefined",
+			},
+		},
+		{
+			name: "nextTick_multiple",
+			script: `
+				const process = require("/lib/process");
+				process.nextTick(() => console.println("tick 1"));
+				process.nextTick(() => console.println("tick 2"));
+				process.nextTick(() => console.println("tick 3"));
+				console.println("main");
+			`,
+			output: []string{
+				"main",
+				"tick 1",
+				"tick 2",
+				"tick 3",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessChdir(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "chdir_to_home",
+			script: `
+				const process = require("/lib/process");
+				process.chdir("~");
+				console.println("cwd after ~:", process.cwd());
+			`,
+			output: []string{
+				"cwd after ~: /work",
+			},
+		},
+		{
+			name: "chdir_empty_string",
+			script: `
+				const process = require("/lib/process");
+				process.chdir("");
+				console.println("cwd after empty:", process.cwd());
+			`,
+			output: []string{
+				"cwd after empty: /work",
+			},
+		},
+		{
+			name: "chdir_nonexistent",
+			script: `
+				const process = require("/lib/process");
+				try {
+					process.chdir("/nonexistent/path");
+					console.println("should not reach here");
+				} catch (e) {
+					console.println("error caught:", e.message.includes("no such file"));
+				}
+			`,
+			output: []string{
+				"error caught: true",
+			},
+		},
+		{
+			name: "chdir_to_file",
+			script: `
+				const process = require("/lib/process");
+				try {
+					process.chdir("/sbin/echo.js");
+					console.println("should not reach here");
+				} catch (e) {
+					console.println("error caught:", e.message.includes("not a directory"));
+				}
+			`,
+			output: []string{
+				"error caught: true",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessExecErrors(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "exec_no_args",
+			script: `
+				const process = require("/lib/process");
+				const result = process.exec();
+				if (result instanceof Error) {
+					console.println("error:", result.message.includes("no command"));
+				} else {
+					console.println("result:", result);
+				}
+			`,
+			output: []string{
+				"error: true",
+			},
+		},
+		{
+			name: "execString_no_args",
+			script: `
+				const process = require("/lib/process");
+				const result = process.execString();
+				if (result instanceof Error) {
+					console.println("error:", result.message.includes("no source"));
+				} else {
+					console.println("result:", result);
+				}
+			`,
+			output: []string{
+				"error: true",
+			},
+		},
+		{
+			name: "execString_with_args",
+			script: `
+				const process = require("/lib/process");
+				const exitCode = process.execString(
+					"console.println('sum:', 10 + 20)",
+					"10", "20"
+				);
+				console.println("exit code:", exitCode);
+			`,
+			output: []string{
+				"sum: 30",
+				"exit code: 0",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessProperties(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "process_ppid",
+			script: `
+				const process = require("/lib/process");
+				console.println("ppid type:", typeof process.ppid);
+				console.println("ppid > 0:", process.ppid > 0);
+			`,
+			output: []string{
+				"ppid type: number",
+				"ppid > 0: true",
+			},
+		},
+		{
+			name: "process_execPath",
+			script: `
+				const process = require("/lib/process");
+				console.println("execPath type:", typeof process.execPath);
+				console.println("has execPath:", process.execPath.length > 0);
+			`,
+			output: []string{
+				"execPath type: string",
+				"has execPath: true",
+			},
+		},
+		{
+			name: "process_title",
+			script: `
+				const process = require("/lib/process");
+				console.println("title:", process.title);
+			`,
+			output: []string{
+				"title: process_title",
+			},
+		},
+		{
+			name: "process_versions_details",
+			script: `
+				const process = require("/lib/process");
+				console.println("jsh version:", process.versions.jsh);
+				console.println("go version type:", typeof process.versions.go);
+			`,
+			output: []string{
+				"jsh version: 1.0.0",
+				"go version type: string",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessDumpStack(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "dumpStack",
+			script: `
+				const process = require("/lib/process");
+				function testFunc() {
+					process.dumpStack(5);
+					console.println("stack dumped");
+				}
+				testFunc();
+			`,
+			output: []string{
+				"stack dumped",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		RunTest(t, tc)
+	}
+}
+
+func TestProcessHrtimeEdgeCases(t *testing.T) {
+	tests := []TestCase{
+		{
+			name: "hrtime_with_string",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime("invalid");
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+		{
+			name: "hrtime_with_empty_array",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime([]);
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+		{
+			name: "hrtime_with_single_element_array",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime([123]);
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+		{
+			name: "hrtime_with_invalid_types_in_array",
+			script: `
+				const process = require("/lib/process");
+				const time = process.hrtime(["string", {}]);
+				console.println("is array:", Array.isArray(time));
+				console.println("length:", time.length);
+			`,
+			output: []string{
+				"is array: true",
+				"length: 2",
+			},
+		},
+		{
+			name: "hrtime_with_mixed_valid_types",
+			script: `
+				const process = require("/lib/process");
+				const start = process.hrtime();
+				// Use integers instead of floats
+				const time = process.hrtime([Math.floor(start[0]), Math.floor(start[1])]);
+				console.println("is array:", Array.isArray(time));
+				console.println("has non-negative values:", time[0] >= 0 && time[1] >= 0);
+			`,
+			output: []string{
+				"is array: true",
+				"has non-negative values: true",
 			},
 		},
 	}

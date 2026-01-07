@@ -1,4 +1,6 @@
 
+const {now} = require('process');
+
 function printNow(count) {
     console.println(`${count} timer => ${now()}`);
     if (count < 3) {
