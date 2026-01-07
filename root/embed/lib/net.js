@@ -252,8 +252,8 @@ class Socket extends EventEmitter {
             return originalEmit(event, ...args);
         };
         
-        // Set up thread-safe event dispatcher using process.dispatchEvent
-        nativeSocket.setEmitter(this, process.dispatchEvent);
+        // Set up javascript object reference in native socket
+        nativeSocket.setObject(this);
         
         this._setupRaw();
         this.connecting = false;

@@ -39,6 +39,9 @@ type Server struct {
 }
 
 func (s *Server) emit(event string, data any) {
+	if s.obj == nil {
+		return
+	}
 	s.dispatch(s.obj, event, data)
 }
 
@@ -90,16 +93,10 @@ func (s *Server) acceptLoop() {
 		// Create socket with a dispatch-based emit function
 		// This ensures all socket events go through the event loop
 		socket := &Socket{
-			dispatch: s.dispatch,
+			obj:      nil, // Will be set later if needed
 			conn:     conn,
+			dispatch: s.dispatch,
 			closed:   false,
-			emit: func(event string, data any) {
-				// Emit through the server's dispatch mechanism
-				// The socket will be passed as part of the event data
-				if s.dispatch != nil {
-					s.dispatch(s.obj, event, data)
-				}
-			},
 		}
 
 		// Add to server's connection map
@@ -193,9 +190,9 @@ func Dial(obj *goja.Object, port int, host string, dispatch engine.EventDispatch
 
 // Socket represents a TCP socket connection
 type Socket struct {
+	obj          *goja.Object
 	conn         net.Conn
 	dispatch     engine.EventDispatchFunc
-	emit         func(event string, data any)
 	mu           sync.Mutex
 	closed       bool
 	readTimeout  time.Duration
@@ -204,11 +201,10 @@ type Socket struct {
 
 func newSocketFromConn(conn net.Conn, obj *goja.Object, dispatch engine.EventDispatchFunc) *Socket {
 	socket := &Socket{
-		conn: conn,
-		emit: func(event string, data any) {
-			dispatch(obj, event, data)
-		},
-		closed: false,
+		obj:      obj,
+		conn:     conn,
+		dispatch: dispatch,
+		closed:   false,
 	}
 
 	// Start reading in background
@@ -227,18 +223,14 @@ func (s *Socket) readLoop() {
 		n, err := s.conn.Read(buf)
 		if err != nil {
 			if err == io.EOF {
-				if s.emit != nil {
-					s.emit("end", nil)
-				}
+				s.emit("end", nil)
 				s.Close()
 				return
 			}
 			s.mu.Lock()
 			if !s.closed {
 				s.mu.Unlock()
-				if s.emit != nil {
-					s.emit("error", err)
-				}
+				s.emit("error", err)
 			} else {
 				s.mu.Unlock()
 			}
@@ -248,11 +240,16 @@ func (s *Socket) readLoop() {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
-			if s.emit != nil {
-				s.emit("data", data)
-			}
+			s.emit("data", data)
 		}
 	}
+}
+
+func (s *Socket) emit(event string, data any) {
+	if s.obj == nil {
+		return
+	}
+	s.dispatch(s.obj, event, data)
 }
 
 func (s *Socket) Write(data []byte) (int, error) {
@@ -269,9 +266,7 @@ func (s *Socket) Write(data []byte) (int, error) {
 
 	n, err := s.conn.Write(data)
 	if err != nil {
-		if s.emit != nil {
-			s.emit("error", err)
-		}
+		s.emit("error", err)
 		return n, err
 	}
 
@@ -305,9 +300,7 @@ func (s *Socket) Close() error {
 	if s.conn != nil {
 		err = s.conn.Close()
 	}
-	if s.emit != nil {
-		s.emit("close", false) // false = not an error close
-	}
+	s.emit("close", false) // false = not an error close
 	return err
 }
 
@@ -324,9 +317,7 @@ func (s *Socket) Destroy() error {
 	if s.conn != nil {
 		err = s.conn.Close()
 	}
-	if s.emit != nil {
-		s.emit("close", true) // true = error close (destroyed)
-	}
+	s.emit("close", true) // true = error close (destroyed)
 	return err
 }
 
@@ -438,12 +429,10 @@ func (s *Socket) IsClosed() bool {
 	return s.closed
 }
 
-func (s *Socket) SetEmitter(obj *goja.Object, dispatcher func(obj *goja.Object, event string, data any)) {
+func (s *Socket) SetObject(obj *goja.Object) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.emit = func(event string, data any) {
-		dispatcher(obj, event, data)
-	}
+	s.obj = obj
 }
 
 func (s *Socket) StartReading() {
