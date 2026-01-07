@@ -66,10 +66,18 @@ Each option in the `options` object can have:
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `type` | string | Yes | Either `'boolean'` or `'string'` |
+| `type` | string | Yes | One of: `'boolean'`, `'string'`, `'integer'`, or `'float'` |
 | `short` | string | No | Single character short option (e.g., `'f'` for `-f`) |
 | `multiple` | boolean | No | Allow option to be specified multiple times (collects values in array) |
 | `default` | any | No | Default value if option is not provided |
+
+**Supported Types:**
+- `'boolean'`: True/false flag, does not take a value
+- `'string'`: Accepts any string value
+- `'integer'`: Parses value as integer, validates that no decimal point is present
+- `'float'`: Parses value as floating-point number, allows decimal values
+
+**Note:** Option names automatically convert from camelCase to kebab-case for CLI flags. For example, `userName` becomes `--user-name`, allowing you to use JavaScript naming conventions in code while following Linux CLI conventions on the command line.
 
 ### Positional Definition
 
@@ -105,6 +113,23 @@ Returns an object with:
 
 ## Examples
 
+### CamelCase to Kebab-Case Conversion
+
+Option names are automatically converted from camelCase to kebab-case for CLI flags:
+
+```javascript
+const result = parseArgs(['--user-name', 'Alice', '--max-retry-count', '5', '--enable-debug'], {
+    options: {
+        userName: { type: 'string' },           // Becomes --user-name
+        maxRetryCount: { type: 'string' },      // Becomes --max-retry-count
+        enableDebug: { type: 'boolean' }        // Becomes --enable-debug
+    }
+});
+// result.values: { userName: 'Alice', maxRetryCount: '5', enableDebug: true }
+```
+
+This allows you to use JavaScript naming conventions (camelCase) in your code while following traditional Linux CLI conventions (kebab-case) on the command line. Simple names without capital letters (like `port`, `verbose`) are not converted.
+
 ### Long Options
 
 ```javascript
@@ -127,6 +152,37 @@ const result = parseArgs(['-v', '-o', 'out.txt'], {
     }
 });
 // result.values: { verbose: true, output: 'out.txt' }
+```
+
+### Integer and Float Options
+
+Use `integer` type for whole numbers and `float` type for decimal numbers:
+
+```javascript
+const result = parseArgs(['--port', '8080', '--ratio', '0.75', '-c', '10'], {
+    options: {
+        port: { type: 'integer' },           // Parses as integer
+        ratio: { type: 'float' },            // Parses as float
+        count: { type: 'integer', short: 'c' }
+    }
+});
+// result.values: { port: 8080, ratio: 0.75, count: 10 }
+// All numeric values are JavaScript numbers (typeof === 'number')
+```
+
+**Integer validation:**
+```javascript
+// This will throw an error because 3.14 contains a decimal point
+parseArgs(['--count', '3.14'], {
+    options: { count: { type: 'integer' } }
+});
+// TypeError: Option --count requires an integer value, got: 3.14
+
+// This will throw an error because 'abc' is not a valid number
+parseArgs(['--port', 'abc'], {
+    options: { port: { type: 'integer' } }
+});
+// TypeError: Option --port requires a valid integer value, got: abc
 ```
 
 ### Inline Values
@@ -201,17 +257,18 @@ const result = parseArgs(['--foo', '--', '--bar', 'baz'], {
 
 ### Negative Options
 
-Enable `--no-` prefix to set boolean options to false:
+Enable `--no-` prefix to set boolean options to false. Works with camelCase option names:
 
 ```javascript
-const result = parseArgs(['--no-color', '--verbose'], {
+const result = parseArgs(['--no-color', '--verbose', '--no-enable-debug'], {
     options: {
         color: { type: 'boolean' },
-        verbose: { type: 'boolean' }
+        verbose: { type: 'boolean' },
+        enableDebug: { type: 'boolean' }      // --no-enable-debug sets to false
     },
     allowNegative: true
 });
-// result.values: { color: false, verbose: true }
+// result.values: { color: false, verbose: true, enableDebug: false }
 ```
 
 ### Named Positionals
@@ -326,7 +383,9 @@ Each token has:
 The parser throws `TypeError` in the following cases:
 
 - Unknown option when `strict: true` (default)
-- Missing value for string option
+- Missing value for string, integer, or float option
+- Invalid number format for integer or float option
+- Decimal value for integer option (e.g., `3.14` when integer is expected)
 - Unexpected positional argument when `allowPositionals: false` and `strict: true`
 - Using `--no-` prefix on non-boolean option when `strict: true`
 - Boolean option with inline value when `strict: true`
@@ -392,10 +451,12 @@ This implementation is compatible with Node.js `util.parseArgs()` API, supportin
 
 Beyond Node.js `util.parseArgs()`, this implementation adds:
 
+- ✅ **Integer and float types** - Numeric types with automatic parsing and validation
 - ✅ **Named positionals** - Assign names to positional arguments
 - ✅ **Optional positionals** - Make positional arguments optional with defaults
 - ✅ **Variadic positionals** - Collect remaining arguments into an array
 - ✅ **Positional validation** - Automatic validation of required arguments
+- ✅ **CamelCase to kebab-case conversion** - Automatically converts option names from camelCase to kebab-case for CLI flags
 
 ## License
 

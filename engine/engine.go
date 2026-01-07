@@ -86,6 +86,13 @@ func (jr *JSRuntime) Run() error {
 		if _, err := vm.RunProgram(program); err != nil {
 			retErr = err
 			if ie, ok := err.(*goja.InterruptedError); ok {
+				if ec, ok := ie.Value().(Exit); ok {
+					// process.exit(exit_code) called from javascript
+					// it indicates normal termination
+					// do not treat as error
+					jr.exitCode = ec.Code
+					return
+				}
 				fmt.Fprintf(jr.Env.Writer(), "Interrupted: %s\n", ie.String())
 			} else {
 				msg := err.Error()

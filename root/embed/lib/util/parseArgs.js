@@ -76,12 +76,18 @@ function parseArgs(argsOrConfig, maybeOptions) {
         }
     }
 
+    // Convert camelCase to kebab-case for CLI flags
+    function toKebabCase(str) {
+        return str.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+    }
+
     // Build option maps for quick lookup
     const longOptions = new Map();
     const shortOptions = new Map();
 
     for (const [name, optionConfig] of Object.entries(options)) {
-        longOptions.set(name, { name, ...optionConfig });
+        const kebabName = toKebabCase(name);
+        longOptions.set(kebabName, { name, ...optionConfig });
         if (optionConfig.short) {
             shortOptions.set(optionConfig.short, { name, ...optionConfig });
         }
@@ -194,6 +200,51 @@ function parseArgs(argsOrConfig, maybeOptions) {
                         inlineValue
                     });
                 }
+            } else if (option.type === 'integer' || option.type === 'float') {
+                if (isNegative && strict) {
+                    throw new TypeError(`Option --no-${optionName} cannot be used with type '${option.type}'`);
+                }
+
+                // Get value from inline or next arg
+                if (optionValue === undefined) {
+                    index++;
+                    if (index >= args.length) {
+                        throw new TypeError(`Option --${optionName} requires a value`);
+                    }
+                    optionValue = args[index];
+                }
+
+                // Parse and validate number
+                const numValue = option.type === 'integer' ? parseInt(optionValue, 10) : parseFloat(optionValue);
+                
+                if (isNaN(numValue)) {
+                    throw new TypeError(`Option --${optionName} requires a valid ${option.type} value, got: ${optionValue}`);
+                }
+
+                // For integer, check if the string contains a decimal point
+                if (option.type === 'integer' && optionValue.includes('.')) {
+                    throw new TypeError(`Option --${optionName} requires an integer value, got: ${optionValue}`);
+                }
+
+                if (option.multiple) {
+                    if (!Array.isArray(result.values[option.name])) {
+                        result.values[option.name] = [];
+                    }
+                    result.values[option.name].push(numValue);
+                } else {
+                    result.values[option.name] = numValue;
+                }
+
+                if (tokens) {
+                    result.tokens.push({
+                        kind: 'option',
+                        name: option.name,
+                        rawName: `--${actualOptionName}`,
+                        index: inlineValue ? index : index - 1,
+                        value: numValue,
+                        inlineValue
+                    });
+                }
             } else if (option.type === 'boolean') {
                 const boolValue = !isNegative;
 
@@ -285,6 +336,57 @@ function parseArgs(argsOrConfig, maybeOptions) {
                             rawName: `-${shortOpt}`,
                             index: inlineValue ? index : (optionValue !== shortOpts.slice(i + 1) ? index : index - 1),
                             value: optionValue,
+                            inlineValue
+                        });
+                    }
+
+                    // Value consumed, break out of char loop
+                    break;
+                } else if (option.type === 'integer' || option.type === 'float') {
+                    // Get value from inline, remainder, or next arg
+                    if (optionValue !== undefined) {
+                        // From -p=123
+                    } else if (i < shortOpts.length - 1) {
+                        // Remaining chars are the value
+                        optionValue = shortOpts.slice(i + 1);
+                        inlineValue = true;
+                    } else {
+                        // Get from next arg
+                        index++;
+                        if (index >= args.length) {
+                            throw new TypeError(`Option -${shortOpt} requires a value`);
+                        }
+                        optionValue = args[index];
+                    }
+
+                    // Parse and validate number
+                    const numValue = option.type === 'integer' ? parseInt(optionValue, 10) : parseFloat(optionValue);
+                    
+                    if (isNaN(numValue)) {
+                        throw new TypeError(`Option -${shortOpt} requires a valid ${option.type} value, got: ${optionValue}`);
+                    }
+
+                    // For integer, check if the string contains a decimal point
+                    if (option.type === 'integer' && optionValue.includes('.')) {
+                        throw new TypeError(`Option -${shortOpt} requires an integer value, got: ${optionValue}`);
+                    }
+
+                    if (option.multiple) {
+                        if (!Array.isArray(result.values[option.name])) {
+                            result.values[option.name] = [];
+                        }
+                        result.values[option.name].push(numValue);
+                    } else {
+                        result.values[option.name] = numValue;
+                    }
+
+                    if (tokens) {
+                        result.tokens.push({
+                            kind: 'option',
+                            name: option.name,
+                            rawName: `-${shortOpt}`,
+                            index: inlineValue ? index : (optionValue !== shortOpts.slice(i + 1) ? index : index - 1),
+                            value: numValue,
                             inlineValue
                         });
                     }
@@ -385,5 +487,69 @@ function parseArgs(argsOrConfig, maybeOptions) {
 
     return result;
 }
+
+// Helper function to convert camelCase to kebab-case
+function toKebabCase(str) {
+    return str.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+}
+
+// Format help message for options
+function formatHelp(config) {
+    const options = config.options || {};
+    const usage = config.usage || 'Usage: [options]';
+    const positionals = config.positionals || [];
+    
+    const lines = [];
+    lines.push(usage);
+    
+    // Format positionals if present
+    if (positionals.length > 0) {
+        lines.push('');
+        lines.push('Positional arguments:');
+        for (const pos of positionals) {
+            if (typeof pos === 'string') {
+                lines.push(`  ${pos}`);
+            } else {
+                const required = pos.optional ? ' (optional)' : '';
+                const variadic = pos.variadic ? '...' : '';
+                const defaultVal = pos.default !== undefined ? ` (default: ${pos.default})` : '';
+                const desc = pos.description ? ` - ${pos.description}` : '';
+                lines.push(`  ${pos.name}${variadic}${required}${desc}${defaultVal}`);
+            }
+        }
+    }
+    
+    // Format options
+    if (Object.keys(options).length > 0) {
+        lines.push('');
+        lines.push('Options:');
+        
+        // First pass: calculate max width of option keys
+        let maxKeyWidth = 0;
+        for (const [key, opt] of Object.entries(options)) {
+            const short = opt.short ? `-${opt.short}, ` : '    ';
+            const kebabKey = toKebabCase(key);
+            const keyText = `${short}--${kebabKey}`;
+            maxKeyWidth = Math.max(maxKeyWidth, keyText.length);
+        }
+        
+        // Second pass: format with padding
+        for (const [key, opt] of Object.entries(options)) {
+            const short = opt.short ? `-${opt.short}, ` : '    ';
+            const kebabKey = toKebabCase(key);
+            const keyText = `${short}--${kebabKey}`;
+            const padding = ' '.repeat(maxKeyWidth - keyText.length);
+            const desc = opt.description || '';
+            const defaultVal = opt.default !== undefined ? ` (default: ${opt.default})` : '';
+            
+            lines.push(`  ${keyText}${padding}${desc ? '  ' + desc : ''}${defaultVal}`);
+        }
+    }
+    
+    return lines.join('\n');
+}
+
+parseArgs.formatHelp = formatHelp;
+parseArgs.toKebabCase = toKebabCase;
 
 module.exports = parseArgs;
