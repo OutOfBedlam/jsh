@@ -151,7 +151,7 @@ func RunTest(t *testing.T, tc TestCase) {
 		}
 		for i, expectedLine := range tc.output {
 			if strings.Contains(expectedLine, "$") {
-				expectedLine = engine.Expand(jr.Env, expectedLine)
+				expectedLine = jr.Env.Expand(expectedLine)
 			}
 			// Support prefix matching with "..." suffix
 			if strings.HasSuffix(expectedLine, "...") {

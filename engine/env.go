@@ -14,13 +14,15 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 )
 
-type Env interface {
-	Reader() io.Reader
-	Writer() io.Writer
-	Set(key string, value any)
-	Get(key string) any
-	ExecBuilder() ExecBuilderFunc
-	Filesystem() fs.FS
+type Env struct {
+	writer      io.Writer
+	reader      io.Reader
+	fs          fs.FS
+	execBuilder ExecBuilderFunc
+	vars        map[string]any
+
+	aliases            map[string][]string
+	aliasCaseSensitive bool
 }
 
 // ExecBuilderFunc is a function that builds an *exec.Cmd given the source and arguments.
@@ -29,7 +31,7 @@ type Env interface {
 type ExecBuilderFunc func(code string, args []string, env map[string]any) (*exec.Cmd, error)
 
 // Which looks for the command in the PATH environment variable and returns the full path to the command.
-func Which(env Env, command string) string {
+func (env *Env) Which(command string) string {
 	if !strings.HasSuffix(command, ".js") {
 		command += ".js"
 	}
@@ -42,7 +44,7 @@ func Which(env Env, command string) string {
 		paths := strings.Split(pathStr, ":")
 		for _, dir := range paths {
 			fullPath := filepath.Join(dir, command)
-			fullPath = ResolvePath(env, fullPath)
+			fullPath = env.ResolvePath(fullPath)
 			if fi, err := filesystem.Open(fullPath); err == nil {
 				fi.Close()
 				return fullPath
@@ -52,20 +54,143 @@ func Which(env Env, command string) string {
 	return ""
 }
 
+func (env *Env) SetAliasCaseSensitive(caseSensitive bool) {
+	env.aliasCaseSensitive = caseSensitive
+}
+
+func (env *Env) SetAlias(command string, alias []string) {
+	if env.aliases == nil {
+		env.aliases = make(map[string][]string)
+	}
+	key := command
+	if !env.aliasCaseSensitive {
+		key = strings.ToLower(command)
+	}
+	env.aliases[key] = alias
+}
+
+func (env *Env) Alias(command string) []string {
+	key := command
+	if !env.aliasCaseSensitive {
+		key = strings.ToLower(command)
+	}
+	if alias, ok := env.aliases[key]; ok {
+		return alias
+	}
+	return []string{command}
+}
+
+type SecureString string
+
+const SecureMask = "********"
+const SecureStringPrefix = "SecureString:"
+
+// MarshalJSON implements json.Marshaler interface
+// It prefixes the value with "SecureString:" to preserve the original value
+func (s SecureString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(SecureStringPrefix + string(s))
+}
+
+// UnmarshalJSON implements json.Unmarshaler interface
+// It converts JSON string to SecureString type, handling both prefixed and non-prefixed values
+func (s *SecureString) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	// Remove prefix if present
+	str, _ = strings.CutPrefix(str, SecureStringPrefix)
+	*s = SecureString(str)
+	return nil
+}
+
 // expand $VAR and ${VAR} form environment
-func Expand(env Env, str string) string {
-	str = os.Expand(str, func(varName string) string {
-		val := env.Get(varName)
-		if valStr, ok := val.(string); ok {
-			return valStr
+// Single quoted strings are not expanded
+func (env *Env) Expand(str string) string {
+	var result strings.Builder
+	inSingleQuote := false
+	inDoubleQuote := false
+	i := 0
+
+	for i < len(str) {
+		ch := str[i]
+
+		// Handle quote state changes
+		if ch == '\'' && !inDoubleQuote {
+			inSingleQuote = !inSingleQuote
+			result.WriteByte(ch)
+			i++
+			continue
 		}
-		return ""
-	})
-	return str
+		if ch == '"' && !inSingleQuote {
+			inDoubleQuote = !inDoubleQuote
+			result.WriteByte(ch)
+			i++
+			continue
+		}
+
+		// If in single quotes, don't expand variables
+		if inSingleQuote {
+			result.WriteByte(ch)
+			i++
+			continue
+		}
+
+		// Handle variable expansion
+		if ch == '$' && i+1 < len(str) {
+			varStart := i
+			i++ // skip $
+
+			var varName string
+			if str[i] == '{' {
+				// ${VAR} format
+				i++ // skip {
+				end := strings.IndexByte(str[i:], '}')
+				if end == -1 {
+					// No closing brace, treat as literal
+					result.WriteString(str[varStart:i])
+					continue
+				}
+				varName = str[i : i+end]
+				i += end + 1 // skip varName and }
+			} else {
+				// $VAR format
+				start := i
+				for i < len(str) && (isAlphaNumeric(str[i]) || str[i] == '_') {
+					i++
+				}
+				varName = str[start:i]
+			}
+
+			// Expand variable
+			if varName != "" {
+				val := env.Get(varName)
+				switch v := val.(type) {
+				case string:
+					result.WriteString(v)
+				case SecureString:
+					result.WriteString(SecureMask)
+				case nil:
+					// empty
+				default:
+					result.WriteString(fmt.Sprintf("%v", v))
+				}
+			}
+		} else {
+			result.WriteByte(ch)
+			i++
+		}
+	}
+
+	return result.String()
+}
+
+func isAlphaNumeric(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
 }
 
 // ResolvePath resolves a path by expanding ~ to HOME and expanding environment variables.
-func ResolvePath(env Env, path string) string {
+func (env *Env) ResolvePath(path string) string {
 	if strings.HasPrefix(path, "~") {
 		home := env.Get("HOME")
 		if homeStr, ok := home.(string); ok {
@@ -83,8 +208,8 @@ func ResolvePath(env Env, path string) string {
 	return filepath.ToSlash(path)
 }
 
-func ResolveAbsPath(env Env, path string) string {
-	path = ResolvePath(env, path)
+func (env *Env) ResolveAbsPath(path string) string {
+	path = env.ResolvePath(path)
 	if !strings.HasPrefix(path, "/") {
 		cwd := env.Get("PWD")
 		if cwdStr, ok := cwd.(string); ok {
@@ -95,7 +220,7 @@ func ResolveAbsPath(env Env, path string) string {
 	return path
 }
 
-func GlobalFolders(env Env) []string {
+func (env *Env) GlobalFolders() []string {
 	path := env.Get("LIBRARY_PATH")
 	if pathStr, ok := path.(string); ok && pathStr != "" {
 		parts := strings.Split(pathStr, ":")
@@ -104,7 +229,7 @@ func GlobalFolders(env Env) []string {
 	return []string{}
 }
 
-func PathResolver(env Env, base, path string) string {
+func (env *Env) PathResolver(base, path string) string {
 	if base == "." || strings.HasPrefix(base, "./") {
 		cwd := env.Get("PWD")
 		if cwdStr, ok := cwd.(string); ok {
@@ -163,7 +288,7 @@ func PathResolver(env Env, base, path string) string {
 	return resolved
 }
 
-func LoadSource(env Env, moduleName string) ([]byte, error) {
+func (env *Env) LoadSource(moduleName string) ([]byte, error) {
 	moduleName = filepath.ToSlash(moduleName) // for Windows compatibility
 	var fileSystem fs.FS = env.Filesystem()
 	if fileSystem == nil {
@@ -254,86 +379,84 @@ func CleanPath(p string) string {
 	return p
 }
 
-type DefaultEnv struct {
-	writer      io.Writer
-	reader      io.Reader
-	fs          fs.FS
-	execBuilder ExecBuilderFunc
-	vars        map[string]any
-}
-
-var _ Env = (*DefaultEnv)(nil)
-
-func NewEnv(opts ...EnvOption) Env {
-	ret := &DefaultEnv{}
+func NewEnv(opts ...EnvOption) *Env {
+	ret := &Env{}
 	for _, opt := range opts {
 		opt(ret)
 	}
 	return ret
 }
 
-type EnvOption func(*DefaultEnv)
+type EnvOption func(*Env)
+
+func WithAliases(aliases map[string]string) EnvOption {
+	return func(de *Env) {
+		for k, v := range aliases {
+			de.SetAlias(k, strings.Split(v, " "))
+		}
+	}
+}
 
 func WithFilesystem(fs fs.FS) EnvOption {
-	return func(de *DefaultEnv) {
+	return func(de *Env) {
 		de.fs = fs
 	}
 }
 
 func WithWriter(w io.Writer) EnvOption {
-	return func(de *DefaultEnv) {
+	return func(de *Env) {
 		de.writer = w
 	}
 }
 
 func WithReader(r io.Reader) EnvOption {
-	return func(de *DefaultEnv) {
+	return func(de *Env) {
 		de.reader = r
 	}
 }
 
 func WithExecBuilder(eb ExecBuilderFunc) EnvOption {
-	return func(de *DefaultEnv) {
+	return func(de *Env) {
 		de.execBuilder = eb
 	}
 }
 
-func (de *DefaultEnv) Reader() io.Reader {
-	if de.reader != nil {
-		return de.reader
+func (e *Env) Reader() io.Reader {
+	if e.reader != nil {
+		return e.reader
 	}
 	return os.Stdin
 }
 
-func (de *DefaultEnv) Writer() io.Writer {
-	if de.writer != nil {
-		return de.writer
+func (e *Env) Writer() io.Writer {
+	if e.writer != nil {
+		return e.writer
 	}
 	return os.Stdout
 }
 
-func (de *DefaultEnv) Filesystem() fs.FS {
-	return de.fs
+func (e *Env) Filesystem() fs.FS {
+	return e.fs
 }
 
-func (de *DefaultEnv) ExecBuilder() ExecBuilderFunc {
-	return de.execBuilder
+func (e *Env) ExecBuilder() ExecBuilderFunc {
+	return e.execBuilder
 }
 
-func (de *DefaultEnv) Set(key string, value any) {
-	if de.vars == nil {
-		de.vars = make(map[string]any)
+func (e *Env) Set(key string, value any) {
+	if e.vars == nil {
+		e.vars = make(map[string]any)
 	}
 	if value == nil {
-		delete(de.vars, key)
+		delete(e.vars, key)
 		return
 	}
-	de.vars[key] = value
+	e.vars[key] = value
 }
 
-func (de *DefaultEnv) Get(key string) any {
-	if de.vars == nil {
+func (e *Env) Get(key string) any {
+	if e.vars == nil {
 		return nil
 	}
-	return de.vars[key]
+	return e.vars[key]
 }

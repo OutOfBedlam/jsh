@@ -45,8 +45,8 @@ func (jr *JSRuntime) Process(vm *goja.Runtime, module *goja.Object) {
 	// Functions
 	exports.Set("addShutdownHook", jr.AddShutdownHook)
 	exports.Set("exit", doExit(vm))
-	exports.Set("which", jr.Which)
-	exports.Set("expand", jr.Expand)
+	exports.Set("which", jr.Env.Which)
+	exports.Set("expand", jr.Env.Expand)
 	exports.Set("exec", doExec(vm, jr.Exec))
 	exports.Set("execString", doExecString(vm, jr.Exec))
 	exports.Set("dispatchEvent", dispatchEvent(jr.EventLoop()))
@@ -218,20 +218,12 @@ func (jr *JSRuntime) Cwd() string {
 	return jr.Env.Get("PWD").(string)
 }
 
-func (jr *JSRuntime) Which(cmd string) string {
-	return Which(jr.Env, cmd)
-}
-
-func (jr *JSRuntime) Expand(str string) string {
-	return Expand(jr.Env, str)
-}
-
 func (jr *JSRuntime) Chdir(path string) error {
 	if path == "" {
 		path = "$HOME"
 	}
 	// Get target directory
-	path = ResolvePath(jr.Env, path)
+	path = jr.Env.ResolvePath(path)
 
 	// Handle relative paths
 	if !strings.HasPrefix(path, "/") {

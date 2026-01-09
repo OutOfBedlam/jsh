@@ -22,7 +22,7 @@ type JSRuntime struct {
 	Source string
 	Args   []string
 	Strict bool
-	Env    Env
+	Env    *Env
 
 	registry      *require.Registry
 	eventLoop     *eventloop.EventLoop
@@ -42,7 +42,7 @@ func (jr *JSRuntime) EventLoop() *eventloop.EventLoop {
 
 func (jr *JSRuntime) Run() error {
 	if jr.Env == nil {
-		jr.Env = &DefaultEnv{}
+		jr.Env = &Env{}
 	}
 
 	defer func() {
@@ -109,18 +109,6 @@ func (jr *JSRuntime) ExitCode() int {
 	return jr.exitCode
 }
 
-func (jr *JSRuntime) loadSource(moduleName string) ([]byte, error) {
-	return LoadSource(jr.Env, moduleName)
-}
-
-func (jr *JSRuntime) pathResolver(base, target string) string {
-	return PathResolver(jr.Env, base, target)
-}
-
-func (jr *JSRuntime) globalFolders() []string {
-	return GlobalFolders(jr.Env)
-}
-
 func (jr *JSRuntime) AddShutdownHook(hook func()) {
 	jr.shutdownHooks = append(jr.shutdownHooks, hook)
 }
@@ -130,10 +118,7 @@ func (jr *JSRuntime) Exec(vm *goja.Runtime, source string, args []string) goja.V
 	if eb == nil {
 		return vm.NewGoError(fmt.Errorf("no command builder defined"))
 	}
-	var env map[string]any
-	if de, ok := jr.Env.(*DefaultEnv); ok {
-		env = de.vars
-	}
+	env := jr.Env.vars
 	cmd, err := eb(source, args, env)
 	if err != nil {
 		return vm.NewGoError(err)

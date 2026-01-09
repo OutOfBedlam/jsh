@@ -849,6 +849,78 @@ func TestHttpEdgeCases(t *testing.T) {
 				"X-Boolean: true",
 			},
 		},
+		{
+			name: "connection_refused",
+			script: `
+				const http = require('http');
+				
+				let errorOccurred = false;
+				
+				const req = http.request({
+					protocol: 'http:',
+					host: '127.0.0.1',
+					port: 59999,  // Port that should not be listening
+					path: '/test',
+					method: 'GET'
+				});
+				
+				req.on('error', (err) => {
+					errorOccurred = true;
+					console.println("error event fired:", err.message.includes("connection refused") || err.message.includes("connect") || err.message.includes("dial"));
+				});
+				
+				req.on('response', (res) => {
+					console.println("unexpected response received");
+				});
+				
+				req.end();
+				
+				// Wait a bit for error event to fire
+				setTimeout(() => {
+					console.println("error occurred:", errorOccurred);
+				}, 100);
+			`,
+			output: []string{
+				"error event fired: true",
+				"error occurred: true",
+			},
+		},
+		{
+			name: "invalid_hostname",
+			script: `
+				const http = require('http');
+				
+				let errorOccurred = false;
+				
+				const req = http.request({
+					protocol: 'http:',
+					host: 'invalid-hostname-that-does-not-exist-12345.local',
+					port: 80,
+					path: '/test',
+					method: 'GET'
+				});
+				
+				req.on('error', (err) => {
+					errorOccurred = true;
+					console.println("error event fired:", true);
+				});
+				
+				req.on('response', (res) => {
+					console.println("unexpected response received");
+				});
+				
+				req.end();
+				
+				// Wait for DNS resolution to fail
+				setTimeout(() => {
+					console.println("error occurred:", errorOccurred);
+				}, 200);
+			`,
+			output: []string{
+				"error event fired: true",
+				"error occurred: true",
+			},
+		},
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(echoServer))

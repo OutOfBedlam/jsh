@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -40,17 +39,12 @@ func New(conf Config) (*JSRuntime, error) {
 	if conf.Writer != nil {
 		writer = conf.Writer
 	}
-	var execBuilderFunc ExecBuilderFunc
-	if conf.ExecBuilder != nil {
-		execBuilderFunc = conf.ExecBuilder
-	} else {
-		execBuilderFunc = execBuilder(conf.FSTabs)
-	}
 	opts := []EnvOption{
 		WithFilesystem(filesystem),
 		WithReader(reader),
 		WithWriter(writer),
-		WithExecBuilder(execBuilderFunc),
+		WithExecBuilder(conf.ExecBuilder),
+		WithAliases(conf.Aliases),
 	}
 	env := NewEnv(opts...)
 	for k, v := range conf.Env {
@@ -84,15 +78,26 @@ func New(conf Config) (*JSRuntime, error) {
 		if cmd == "" {
 			// No command or script file provided
 			// start default command
-			cmd := Which(env, conf.Default)
-			b, _ := LoadSource(env, cmd)
+			cmd := env.Which(conf.Default)
+			b, _ := env.LoadSource(cmd)
 			scriptName = conf.Default
 			script = string(b)
 		} else {
-			cmd = Which(env, cmd)
-			b, err := LoadSource(env, cmd)
-			if err != nil {
+			// Check aliases and resolved command
+			var resolved string
+			if alias := env.Alias(cmd); len(alias) > 0 {
+				cmd = alias[0]
+				if len(alias) > 1 {
+					scriptArgs = append(alias[1:], scriptArgs...)
+				}
+			}
+			resolved = env.Which(cmd)
+			if resolved == "" {
 				return nil, fmt.Errorf("command not found: %s", cmd)
+			}
+			b, err := env.LoadSource(resolved)
+			if err != nil {
+				return nil, fmt.Errorf("command not executable: %s", cmd)
 			}
 			// replace shebang line as javascript comment
 			if b[0] == '#' && b[1] == '!' {
@@ -110,9 +115,6 @@ func New(conf Config) (*JSRuntime, error) {
 		scriptName = "ad-hoc"
 	}
 
-	for i, arg := range scriptArgs {
-		scriptArgs[i] = Expand(env, arg)
-	}
 	jr := &JSRuntime{
 		Name:       scriptName,
 		Source:     script,
@@ -122,9 +124,9 @@ func New(conf Config) (*JSRuntime, error) {
 	}
 
 	jr.registry = require.NewRegistry(
-		require.WithLoader(jr.loadSource),
-		require.WithPathResolver(jr.pathResolver),
-		require.WithGlobalFolders(jr.globalFolders()...),
+		require.WithLoader(jr.Env.LoadSource),
+		require.WithPathResolver(jr.Env.PathResolver),
+		require.WithGlobalFolders(jr.Env.GlobalFolders()...),
 	)
 	jr.eventLoop = NewEventLoop(
 		eventloop.EnableConsole(false),
@@ -147,50 +149,6 @@ func (jr *JSRuntime) Main() int {
 		return 1
 	}
 	return jr.ExitCode()
-}
-
-// execBuilder builds an exec.Cmd to run jsh with the given code and args.
-func execBuilder(fstabs []FSTab) ExecBuilderFunc {
-	useSecretBox := os.Getenv("JSH_NO_SECRET_BOX") != "1"
-	return func(code string, args []string, env map[string]any) (*exec.Cmd, error) {
-		self, err := os.Executable()
-		if err != nil {
-			return nil, err
-		}
-		// code and env may contains sensitive information,
-		// so use secret box to pass it to the child process.
-		if useSecretBox {
-			conf := Config{
-				Code:   code,
-				Args:   args,
-				FSTabs: fstabs,
-				Env:    env,
-			}
-			secretBox, err := NewSecretBox(conf)
-			if err != nil {
-				return nil, err
-			}
-			execCmd := exec.Command(self, "-s", secretBox.FilePath(), args[0])
-			return execCmd, nil
-		} else {
-			opts := []string{}
-			for _, tab := range fstabs {
-				opts = append(opts, "-v", fmt.Sprintf("%s=%s", tab.MountPoint, tab.Source))
-			}
-			if code != "" {
-				opts = append(opts, "-c", code)
-				if len(args) > 0 {
-					opts = append(opts, args...)
-				}
-			} else {
-				opts = append(opts, args[0])
-				if args := args[1:]; len(args) > 0 {
-					opts = append(opts, args...)
-				}
-			}
-			return exec.Command(self, opts...), nil
-		}
-	}
 }
 
 // DirFS checks that the given directory exists and is a directory, returning an fs.FS for it.
@@ -217,16 +175,122 @@ func DirFS(dir string) (fileSystem fs.FS, err error) {
 }
 
 type Config struct {
-	Name   string         `json:"name"`
-	Code   string         `json:"code"`
-	Args   []string       `json:"args"`
-	Env    map[string]any `json:"env"`
-	FSTabs FSTabs         `json:"fstabs,omitempty"`
+	Name    string            `json:"name"`
+	Code    string            `json:"code"`
+	Args    []string          `json:"args"`
+	Env     map[string]any    `json:"env"`
+	Aliases map[string]string `json:"aliases,omitempty"`
+	FSTabs  FSTabs            `json:"fstabs,omitempty"`
 
 	Default     string          `json:"default,omitempty"`
 	Writer      io.Writer       `json:"-"`
 	Reader      io.Reader       `json:"-"`
 	ExecBuilder ExecBuilderFunc `json:"-"`
+}
+
+// UnmarshalJSON implements custom unmarshaling for Config to handle SecureString types in Env
+func (c *Config) UnmarshalJSON(data []byte) error {
+	type Alias Config // avoid recursion
+	aux := &struct {
+		Env map[string]json.RawMessage `json:"env"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Process Env map to convert SecureString-prefixed values
+	if aux.Env != nil {
+		c.Env = make(map[string]any)
+		for k, v := range aux.Env {
+			c.Env[k] = processValue(v)
+		}
+	}
+
+	return nil
+}
+
+// processValue recursively processes JSON values to convert SecureString-prefixed strings
+func processValue(raw json.RawMessage) any {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	// Fast path: check first byte to determine type
+	switch raw[0] {
+	case 'n': // null
+		if len(raw) == 4 && raw[1] == 'u' && raw[2] == 'l' && raw[3] == 'l' {
+			return nil
+		}
+	case 't', 'f': // true or false
+		var b bool
+		if err := json.Unmarshal(raw, &b); err == nil {
+			return b
+		}
+	case '"': // string
+		var str string
+		if err := json.Unmarshal(raw, &str); err == nil {
+			if strings.HasPrefix(str, SecureStringPrefix) {
+				return SecureString(strings.TrimPrefix(str, SecureStringPrefix))
+			}
+			return str
+		}
+	case '[': // array
+		var arr []json.RawMessage
+		if err := json.Unmarshal(raw, &arr); err == nil {
+			result := make([]any, len(arr))
+			for i, item := range arr {
+				result[i] = processValue(item)
+			}
+			return result
+		}
+	case '{': // object
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err == nil {
+			result := make(map[string]any)
+			for k, v := range obj {
+				result[k] = processValue(v)
+			}
+			return result
+		}
+	default: // number (or other)
+		var num float64
+		if err := json.Unmarshal(raw, &num); err == nil {
+			return num
+		}
+	}
+
+	// Fallback for unrecognized types
+	return nil
+}
+
+type EnvVars map[string]any
+
+func (e EnvVars) String() string {
+	if len(e) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(e)
+	if err != nil {
+		return err.Error()
+	}
+	return string(b)
+}
+
+// Set(string) error is required to implement flag.Value interface.
+// Set parses and adds a new Env variable from the given string.
+// The format is name=value where value is a JSON value.
+func (e EnvVars) Set(value string) error {
+	fmt.Println("EnvVars Set:", value)
+	tokens := strings.SplitN(value, "=", 2)
+	if len(tokens) != 2 {
+		return fmt.Errorf("invalid env variable: %s", value)
+	}
+	e[tokens[0]] = tokens[1]
+	return nil
 }
 
 type FSTab struct {

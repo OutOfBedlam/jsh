@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/OutOfBedlam/jsh/native"
@@ -11,17 +12,20 @@ import (
 )
 
 // JSH options:
-//  1. -c "script" : command to execute
-//     ex: jsh -c "console.println(require('/lib/process').argv[2])" helloworld
+//  1. -C "script" : command to execute
+//     ex: jsh -C "console.println(require('/lib/process').argv[2])" helloworld
 //  2. script file : execute script file
 //     ex: jsh script.js arg1 arg2
 //  3. no args : start interactive shell
 //     ex: jsh
 func main() {
 	var fstabs engine.FSTabs
-	src := flag.String("c", "", "command to execute")
-	scf := flag.String("s", "", "configured file to start from")
+	var envVars engine.EnvVars = make(map[string]any)
+
+	src := flag.String("C", "", "command to execute")
+	scf := flag.String("S", "", "configured file to start from")
 	flag.Var(&fstabs, "v", "volume to mount (format: /mountpoint=source)")
+	flag.Var(&envVars, "e", "environment variable (format: name=value)")
 	flag.Parse()
 
 	conf := engine.Config{}
@@ -43,10 +47,35 @@ func main() {
 			"PWD":          "/work",
 			"LIBRARY_PATH": "./node_modules:/lib",
 		}
+		conf.Aliases = map[string]string{
+			"ll": "ls -l",
+		}
+	}
+	for k, v := range envVars {
+		conf.Env[k] = v
 	}
 	if !conf.FSTabs.HasMountPoint("/") {
 		conf.FSTabs = append([]engine.FSTab{root.RootFSTab()}, conf.FSTabs...)
 	}
+	conf.ExecBuilder = func(code string, args []string, env map[string]any) (*exec.Cmd, error) {
+		self, err := os.Executable()
+		if err != nil {
+			return nil, err
+		}
+		conf := engine.Config{
+			Code:   code,
+			Args:   args,
+			FSTabs: fstabs,
+			Env:    env,
+		}
+		secretBox, err := engine.NewSecretBox(conf)
+		if err != nil {
+			return nil, err
+		}
+		execCmd := exec.Command(self, "-S", secretBox.FilePath(), args[0])
+		return execCmd, nil
+	}
+
 	engine, err := engine.New(conf)
 	if err != nil {
 		fmt.Println(err.Error())

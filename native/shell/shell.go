@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/OutOfBedlam/jsh/engine"
 	"github.com/OutOfBedlam/jsh/log"
 	jshrl "github.com/OutOfBedlam/jsh/native/readline"
 	"github.com/OutOfBedlam/jsh/native/shell/internal"
@@ -53,6 +54,8 @@ var banner = "\n" +
 	"\x1B[0m" + "\n"
 
 func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
+	env := call.Arguments[0].Export().(*engine.Env)
+
 	var ed multiline.Editor
 	ed.SetTty(NewTty()) // See TtyWrap comment
 	ed.SetPrompt(sh.prompt)
@@ -90,6 +93,8 @@ func (sh *Shell) Run(call goja.FunctionCall) goja.Value {
 			line = strings.Join(input, "")
 		}
 
+		// expand environment variables in the line
+		line = env.Expand(line)
 		if _, alive := sh.process(line); !alive {
 			return sh.rt.ToValue(0)
 		}

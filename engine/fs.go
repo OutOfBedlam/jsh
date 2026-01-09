@@ -633,8 +633,8 @@ func (d *dotFileInfo) Sys() interface{} {
 func (jr *JSRuntime) Filesystem(vm *goja.Runtime, module *goja.Object) {
 	exports := module.Get("exports").(*goja.Object)
 
-	exports.Set("resolvePath", func(path string) string { return ResolvePath(jr.Env, path) })
-	exports.Set("resolveAbsPath", func(path string) string { return ResolveAbsPath(jr.Env, path) })
+	exports.Set("resolvePath", func(path string) string { return jr.Env.ResolvePath(path) })
+	exports.Set("resolveAbsPath", func(path string) string { return jr.Env.ResolveAbsPath(path) })
 	exports.Set("readFile", func(path string) ([]byte, error) { return jr.filesystem.ReadFile(path) })
 	exports.Set("writeFile", func(path string, data []byte) error { return jr.filesystem.WriteFile(path, data) })
 	exports.Set("appendFile", func(path string, data []byte) error { return jr.filesystem.AppendFile(path, data) })

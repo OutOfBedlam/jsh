@@ -96,7 +96,7 @@ func TestMain(m *testing.M) {
 		if source != "" {
 			args = append([]string{
 				"-v", "/work=../test/",
-				"-c", source,
+				"-C", source,
 			}, args...)
 		} else {
 			args = append([]string{
@@ -106,35 +106,6 @@ func TestMain(m *testing.M) {
 		return exec.Command(bin, args...), nil
 	}
 	os.Exit(m.Run())
-}
-
-func TestCleanPath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"foo", "/foo"},
-		{"/foo", "/foo"},
-		{"foo/", "/foo"},
-		{"/foo/", "/foo"},
-		{"foo/bar", "/foo/bar"},
-		{"/foo/bar/", "/foo/bar"},
-		{"foo//bar", "/foo/bar"},
-		{"foo/./bar", "/foo/bar"},
-		{"foo/../bar", "/bar"},
-		{"/", "/"},
-		{".", "/"},
-		{"", "/"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := CleanPath(tt.input)
-			if result != tt.expected {
-				t.Errorf("cleanPath(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
-	}
 }
 
 func TestEngine(t *testing.T) {
