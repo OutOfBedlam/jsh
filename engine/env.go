@@ -85,6 +85,14 @@ type SecureString string
 const SecureMask = "********"
 const SecureStringPrefix = "SecureString:"
 
+func (s SecureString) String() string {
+	return SecureMask
+}
+
+func (s SecureString) Value() string {
+	return string(s)
+}
+
 // MarshalJSON implements json.Marshaler interface
 // It prefixes the value with "SecureString:" to preserve the original value
 func (s SecureString) MarshalJSON() ([]byte, error) {
