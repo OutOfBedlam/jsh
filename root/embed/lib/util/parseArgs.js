@@ -498,6 +498,7 @@ function formatHelp(config) {
     const options = config.options || {};
     const usage = config.usage || 'Usage: [options]';
     const positionals = config.positionals || [];
+    const allowNegative = config.allowNegative === undefined ? true : config.allowNegative;
     
     const lines = [];
     lines.push(usage);
@@ -529,7 +530,9 @@ function formatHelp(config) {
         for (const [key, opt] of Object.entries(options)) {
             const short = opt.short ? `-${opt.short}, ` : '    ';
             const kebabKey = toKebabCase(key);
-            const keyText = `${short}--${kebabKey}`;
+            const isBooleanWithNegative = opt.type === 'boolean' && allowNegative;
+            const longFlag = isBooleanWithNegative ? `--[no-]${kebabKey}` : `--${kebabKey}`;
+            const keyText = `${short}${longFlag}`;
             maxKeyWidth = Math.max(maxKeyWidth, keyText.length);
         }
         
@@ -537,7 +540,9 @@ function formatHelp(config) {
         for (const [key, opt] of Object.entries(options)) {
             const short = opt.short ? `-${opt.short}, ` : '    ';
             const kebabKey = toKebabCase(key);
-            const keyText = `${short}--${kebabKey}`;
+            const isBooleanWithNegative = opt.type === 'boolean' && allowNegative;
+            const longFlag = isBooleanWithNegative ? `--[no-]${kebabKey}` : `--${kebabKey}`;
+            const keyText = `${short}${longFlag}`;
             const padding = ' '.repeat(maxKeyWidth - keyText.length);
             const desc = opt.description || '';
             const defaultVal = opt.default !== undefined ? ` (default: ${opt.default})` : '';
